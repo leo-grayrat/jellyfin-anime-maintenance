@@ -1,0 +1,2 @@
+group,count,reason
+2022 media root,12,该目录未出现在本次 Jellyfin 媒体库导出中，因此不是 NFO 解析问题。
