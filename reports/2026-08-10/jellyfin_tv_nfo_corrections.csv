@@ -1,0 +1,35 @@
+work,rule_id,matched_current_files,target_season,target_episode_min,target_episode_max,future_rule,note
+幼女战记（2017）,youjo2017-main,12,1,1,12,False,主篇 01-12；SP 不自动处理
+克雷瓦提斯,clevatess-main,12,1,1,12,False,仅根目录 TV 正片；NCOP/NCED/PV/menu/特典不自动处理
+SPY×FAMILY Season 3,spy3-absolute,6,3,1,6,False,官方 Season 3 为 MISSION 38-50；换算 S03E01-13
+SPY×FAMILY Season 3,spy3-local,7,3,7,13,False,字幕组使用季内集数 07-13
+藤本树 17-26,fujimoto,8,1,1,8,False,
+Fate/strange Fake,fate-special,1,0,1,1,False,Whispers of Dawn → S00E01
+Fate/strange Fake,fate-main,14,1,1,13,False,TV 正篇 01-13；V2 与原集同号
+【我推的孩子】 第3期,oshi3,11,3,1,11,False,文件名明确 S3
+达尔文事变,darwin-orion,1,1,1,1,False,只修 orion origin 命名；LoliHouse 02+ 当前正常
+金牌得主 第2期,medalist-s2-local,8,2,2,9,False,字幕组明确标 S2
+金牌得主 第2期,medalist-s2-absolute,5,2,1,5,False,官方第2期从总第14话开始
+判处勇者刑,yuusha,12,1,1,12,False,
+名侦探光之美少女！,precure,27,1,1,27,False,NCOP_ED_01 不匹配，故不会处理
+正相反的你与我,seihantai-first,1,1,1,1,False,只修 Nekomoe 首集；SweetSub 02+ 当前正常
+靠死亡游戏混饭吃。,shibou-greentea,2,1,1,2,False,只修 GreenTea 命名；其他字幕组当前正常
+午夜的倾心旋律,mayonaka-haruhana,10,1,3,12,False,
+午夜的倾心旋律,mayonaka-mahiru,2,1,1,2,False,
+葬送的芙莉莲 第2期,frieren-haruhana,3,2,8,10,False,官方第2期为总 #29-#38
+葬送的芙莉莲 第2期,frieren-kitauji,8,2,1,8,False,官方第2期为总 #29-#38
+异国日记,ikoku,13,1,1,13,False,
+上伊那牡丹，醉姿如百合,kamiina-kitauji,11,1,1,11,False,
+上伊那牡丹，醉姿如百合,kamiina-nekomoe,2,1,11,12,False,
+上伊那牡丹，醉姿如百合,kamiina-greentea,1,1,1,1,False,
+想结束这场“我爱你”的游戏,aishiteru-ends,10,1,1,11,False,只修单独 Ends with Love 的方括号命名；联合组和樱桃花当前正常
+淡岛百景,awajima,12,1,1,12,False,
+魔法姐妹露露和莉莉,rurutto,12,1,1,12,False,
+描绘直至生命尽头,kore-mingy,4,1,1,4,True,GreenTea/LoliHouse 版本当前正常
+地狱模式 2nd Season,hellmode2,5,2,1,5,True,未来同样式新集重新运行脚本即可自动补 NFO
+世界在起舞,world-dancing,4,1,1,4,True,
+100女友 第3期,hyakkano3,5,3,1,5,True,字幕文件沿用总话数；官方第3期从总第25话开始
+幼女战记Ⅱ,youjo2,5,2,1,5,True,
+攻壳机动队 THE GHOST IN THE SHELL,ghost-haruhana,3,1,1,3,True,
+攻壳机动队 THE GHOST IN THE SHELL,ghost-greentea,4,1,1,4,True,
+无职转生 第3期,mushoku3,6,3,1,6,True,
