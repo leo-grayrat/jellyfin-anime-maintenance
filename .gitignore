@@ -1,0 +1,6 @@
+# Local Jellyfin exports (may contain private media inventory)
+inputs/raw/
+
+# Local generated logs
+*.log
+jellyfin_tv_nfo_run_log.csv
