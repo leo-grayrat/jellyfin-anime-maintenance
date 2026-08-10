@@ -6,7 +6,7 @@
 - 本轮会为 **247** 个现有视频生成最小 episode NFO；其中 **241** 个当前确实识别错误，另有 **6** 个只是“碰巧识别对了”，但同一命名样式明显不稳定，因此一并固定。
 - 涉及 **26** 个作品/目录。
 - 另有 **51** 个 SP/OVA/NCOP/NCED/PV/menu/特典等特殊内容，本轮刻意不猜编号、不自动写 NFO。
-- 还有 **12** 个 `<BangumiRoot>\2022` 视频未出现在本次 Jellyfin 媒体库导出中，因此不属于“解析错误”；详见单独 CSV。
+- 还有 **12** 个 `<BangumiRoot>\2022` 视频未出现在本次 Jellyfin 媒体库导出中，因此不属于“解析错误”。
 
 ## NFO 的写法
 
@@ -78,7 +78,7 @@
 - **名侦探光之美少女 NCOP/ED：1 个** — 作为附加内容，不自动编号
 - **黄泉的使者 OP：1 个** — 作为附加内容，不自动编号
 
-完整 51 条条目见 `jellyfin_tv_nfo_unresolved_specials.csv`。
+公开仓库中的 `jellyfin_tv_nfo_unresolved_specials.csv` 只保留分类、数量和处理建议，不提交完整本地文件清单。
 
 ## Jellyfin 配置提醒
 
@@ -111,15 +111,15 @@
 .\scripts\jellyfin_tv_nfo_fix.ps1 -Apply -OverwriteExisting
 ```
 
-5. 写完后，在 Jellyfin 中对受影响作品执行媒体库扫描/刷新元数据。若旧的错误分集标题仍留在缓存中，可针对该作品选择“替换所有元数据”后刷新；本地 NFO 的 season/episode 仍应优先参与识别。
+5. 写完后，在 Jellyfin 中对受影响作品执行媒体库扫描/刷新元数据。
 
-## 直接 NFO 包
+## 公开仓库中的数据范围
 
-`jellyfin_tv_nfo_current_files.zip` 已按 `<BangumiRoot>` 的相对目录结构放好当前 247 个 episode NFO + 1 个 `tvshow.nfo`。它主要用于检查或手动部署；由于解压可能覆盖同名文件，**更推荐使用上面的 PowerShell 脚本**，因为脚本默认会保护已有 NFO。
+原始 `anime-library.csv`、`jellyfin-library-export.json` 和按真实文件名生成的 NFO 压缩包不提交到公开仓库：它们会暴露完整本地媒体库存或大量具体文件名。公开仓库保留可复现修复所需的脚本、34 条规则、修正汇总和 NFO 示例；实际 NFO 可在本地由脚本重新生成。
 
 ## 详细清单
 
-- `jellyfin_tv_nfo_corrections.csv`：当前 247 个 NFO 的逐文件“旧识别 → 新 S/E”。
-- `jellyfin_tv_nfo_unresolved_specials.csv`：51 个本轮不自动处理的 SP/Extras。
-- `jellyfin_tv_not_in_library.csv`：12 个未进入 Jellyfin 的 2022 文件。
-- `jellyfin_tv_nfo_rules.json`：脚本使用的全部 34 条命名规则，便于审阅/修改。
+- `jellyfin_tv_nfo_corrections.csv`：按规则汇总当前匹配数量、目标 Season/Episode 范围和未来规则。
+- `jellyfin_tv_nfo_unresolved_specials.csv`：不自动处理的 SP/Extras 分类汇总。
+- `jellyfin_tv_not_in_library.csv`：未进入 Jellyfin 的目录汇总。
+- `rules/jellyfin_tv_nfo_rules.json`：脚本使用的全部 34 条命名规则。
