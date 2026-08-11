@@ -217,3 +217,40 @@ experiments/jellyfin12-nfo-refresh/10-medalist-local-alternate-db-diagnosis.py
 ```
 
 它使用 SQLite `mode=ro` 打开数据库，只输出关系，不修改数据库。
+
+## Medalist SQLite 只读诊断：LocalAlternateVersion 已确认
+
+结果存档：
+
+```text
+experiments/jellyfin12-nfo-refresh/results/13-medalist-local-alternate-db-diagnosis.txt
+```
+
+本次使用 Python 3.13.5 / SQLite 3.45.3 成功以只读方式打开 Jellyfin 12 数据库。此前 `py -3` 实际调用了旧 Python 3.5.0 / SQLite 3.8.11，因此无法解析 Jellyfin 12 使用的 expression index；该环境问题与 Jellyfin 数据本身无关。
+
+数据库结果与前一阶段推断完全一致：
+
+- owner S02E02：`OwnerId` 为空，`PrimaryVersionId` 为空；
+- owner 的 `Data.LocalAlternateVersions` 正好包含 7 条路径；
+- owner 的 `Data.LinkedAlternateVersions` 为空；
+- S02E03-S02E09 共 7 个隐藏 Episode 的 `OwnerId` 全部指向 S02E02；
+- S02E03-S02E09 的 `PrimaryVersionId` 全部指向 S02E02；
+- 8 个 item 的 `PresentationUniqueKey` 全部仍等于 owner 的 ItemId；
+- `LinkedChildren` 中从 owner 出发正好有 7 条 `ChildType=2 (LocalAlternateVersion)`；
+- `ChildType=3 (LinkedAlternateVersion)` 为 0。
+
+摘要：
+
+```text
+Medalist items found:               8 / 8
+Owner LocalAlternateVersion links:  7
+Owner LinkedAlternateVersion links: 0
+Children with OwnerId=owner:        7 / 7
+Children with PrimaryVersionId:     7 / 7
+```
+
+因此到此为止已经不再是“alternate/owned 二选一”的推测，而是数据库级确认：**《金牌得主》第 2 期这个错误组是 LocalAlternateVersion 关系。7 个隐藏 Episode 同时由 LocalAlternateVersion LinkedChildren、OwnerId、PrimaryVersionId 和共同 PresentationUniqueKey 维持。**
+
+这也解释了为什么 `DELETE /Videos/{ownerId}/AlternateSources` 完全无效：该 group 中不存在 LinkedAlternateVersion，接口处理的关系类型与实际错误关系不匹配。
+
+下一步修复实验不能只清某一个字段。需要先根据 Jellyfin 对 LocalAlternateVersion 的持久化逻辑，确定安全地同时解除 local link、OwnerId、PrimaryVersionId，并处理/重算 PresentationUniqueKey 的方法；仍然先以 Medalist 单组为 pilot，不直接扩展到全局 20 个错误组。
