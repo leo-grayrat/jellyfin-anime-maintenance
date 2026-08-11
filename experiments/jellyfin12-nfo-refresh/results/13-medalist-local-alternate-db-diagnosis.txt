@@ -1,0 +1,55 @@
+Medalist local alternate DB diagnosis
+Date: 2026-08-11
+Mode: READ ONLY
+Server: Jellyfin 12.0.0
+
+Purpose
+-------
+Confirm the exact database relationships behind the stale Medalist S02E02-S02E09 local alternate group after DELETE /Videos/{ownerId}/AlternateSources had no visible effect.
+
+Owner
+-----
+ItemId: af564551c864a8892b28736b0de926de
+Expected/current: S02E02
+OwnerId: empty
+PrimaryVersionId: empty
+PresentationUniqueKey: af564551c864a8892b28736b0de926de
+SeriesId: 1e343af25a95b525ae23adc50142693a
+ParentIndexNumber: 2
+IndexNumber: 2
+LocalAlternateVersions: 7 paths
+LinkedAlternateVersions: 0
+
+Hidden children
+---------------
+All seven children S02E03-S02E09 have:
+- OwnerId = af564551c864a8892b28736b0de926de
+- PrimaryVersionId = af564551c864a8892b28736b0de926de
+- PresentationUniqueKey = af564551c864a8892b28736b0de926de
+- SeriesId = 1e343af25a95b525ae23adc50142693a
+- correct ParentIndexNumber = 2
+- correct IndexNumber = 3..9
+- empty LocalAlternateVersions
+- empty LinkedAlternateVersions
+
+LinkedChildren from owner
+-------------------------
+Exactly seven rows exist, all ChildType=2 (LocalAlternateVersion), one for each S02E03-S02E09 item.
+No ChildType=3 (LinkedAlternateVersion) rows exist.
+
+Summary
+-------
+Medalist items found:               8 / 8
+Owner LocalAlternateVersion links:  7
+Owner LinkedAlternateVersion links: 0
+Children with OwnerId=owner:        7 / 7
+Children with PrimaryVersionId:     7 / 7
+
+Conclusion
+----------
+CONFIRMED: this stale group is a LocalAlternateVersion group, not a LinkedAlternateVersion group.
+The seven hidden Episode items are simultaneously held by LocalAlternateVersion LinkedChildren rows, OwnerId, PrimaryVersionId, and the owner's PresentationUniqueKey.
+
+The prior DELETE /Videos/{ownerId}/AlternateSources pilot was expected to be ineffective for this structure because that endpoint targets linked alternate versions, while this group has zero LinkedAlternateVersion rows.
+
+No local media paths, API keys, or database file paths are stored in this archive.
