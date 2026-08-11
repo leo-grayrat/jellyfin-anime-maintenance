@@ -4,3 +4,4 @@ inputs/raw/
 # Local generated logs
 *.log
 jellyfin_tv_nfo_run_log.csv
+jellyfin_tv_nfo_refresh_log.csv
