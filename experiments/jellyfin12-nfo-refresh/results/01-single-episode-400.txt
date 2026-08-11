@@ -1,0 +1,19 @@
+Experiment: 01-single-episode-refresh-broken.ps1
+Date: 2026-08-11
+Status: FAILED BEFORE REFRESH
+Privacy: local media paths omitted; no API key stored.
+
+=== Before FullRefresh ===
+Invoke-RestMethod : 远程服务器返回错误: (400) 错误的请求。
+所在位置 行:18 字符: 13
+
+$Item = Invoke-RestMethod `
+        ~~~~~~~~~~~~~~~~~~~
+
+CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebRequest) [Invoke-RestMethod], WebException
+FullyQualifiedErrorId : WebCmdletWebResponseException,Microsoft.PowerShell.Commands.InvokeRestMethodCommand
+
+Interpretation at the time:
+- The state-read request failed before POST /Refresh was reached.
+- Root cause was the choice of GET /Items/{itemId} for an API-key script.
+- The next version switched to GET /Items?Ids={itemId}.
