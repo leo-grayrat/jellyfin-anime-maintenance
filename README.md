@@ -20,6 +20,8 @@
 
 脚本默认不会覆盖已经存在的 NFO。
 
+如果想快速（让 AI）核查本地元数据，可以查看 `docs/library-export.md` ！
+
 ## 目录
 
 - `scripts/`：NFO 生成脚本
