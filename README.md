@@ -22,10 +22,14 @@
 
 如果想快速（让 AI）核查本地元数据，可以查看 `docs/library-export.md` ！
 
+Jellyfin 12 NFO 刷新调查的脚本版本、运行结果和结论存档见 `docs/history/2026-08-11-jellyfin12-nfo-refresh.md`。
+
 ## 目录
 
-- `scripts/`：NFO 生成脚本
+- `scripts/`：正式 NFO / Jellyfin 维护脚本
 - `rules/`：当前动画命名纠错规则
 - `reports/`：每次核查的汇总说明
 - `samples/`：最小 NFO 示例
+- `experiments/`：一次性实验脚本与脱敏运行结果，不作为正式工具入口
+- `docs/history/`：重要调查过程、版本变化和结论存档
 - `inputs/raw/`：本地原始 Jellyfin/文件清单导出，不提交到 Git
