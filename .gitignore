@@ -5,3 +5,4 @@ inputs/raw/
 *.log
 jellyfin_tv_nfo_run_log.csv
 jellyfin_tv_nfo_refresh_log.csv
+jellyfin_tv_nfo_alternate_audit.csv
