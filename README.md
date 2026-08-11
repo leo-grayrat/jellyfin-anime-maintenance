@@ -24,6 +24,8 @@
 
 Jellyfin 12 NFO 刷新调查的脚本版本、运行结果和结论存档见 `docs/history/2026-08-11-jellyfin12-nfo-refresh.md`。
 
+关于 `YYYY-MM` 目录参与 Episode 路径解析、错误生成 `LocalAlternateVersion`，以及显式 `SxxEyy` 文件名规避实验的后续结论，见 `docs/history/2026-08-12-jellyfin12-path-parser-and-alternate-version.md`。
+
 ## 目录
 
 - `scripts/`：正式 NFO / Jellyfin 维护脚本
