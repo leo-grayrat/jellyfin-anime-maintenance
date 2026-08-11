@@ -21,7 +21,8 @@ $Headers = @{
 
 function Invoke-JellyfinGet {
     param([Parameter(Mandatory=$true)][string]$Uri)
-    return Invoke-RestMethod -Method Get -Uri $Uri -Headers $Headers
+    $response = Invoke-RestMethod -Method Get -Uri $Uri -Headers $Headers
+    return $response
 }
 
 function Invoke-JellyfinFullRefresh {
@@ -102,6 +103,9 @@ function Test-TargetNumbers {
     param($Item, [int]$Season, [int]$Episode)
 
     if ($null -eq $Item) { return $false }
+    if ($null -eq $Item.ParentIndexNumber) { return $false }
+    if ($null -eq $Item.IndexNumber) { return $false }
+
     return ([int]$Item.ParentIndexNumber -eq $Season -and [int]$Item.IndexNumber -eq $Episode)
 }
 
@@ -155,7 +159,7 @@ $rawTargets = @($rows | Where-Object {
 if ($rawTargets.Count -eq 0) {
     Write-Host "No episode targets found for actions: $($actions -join ', ')"
     Write-Host "Use -IncludeExisting to also process SKIP_EXISTING rows."
-    exit 0
+    return
 }
 
 $targets = New-Object System.Collections.Generic.List[object]
@@ -193,6 +197,20 @@ foreach ($target in $targets) {
     $nfoExists = Test-Path -LiteralPath $target.NfoPath -PathType Leaf
     $itemFound = $null -ne $item
 
+    $itemId = ""
+    $seriesId = ""
+    $beforeSeason = $null
+    $beforeEpisode = $null
+    $beforeSeasonId = ""
+
+    if ($itemFound) {
+        $itemId = [string]$item.Id
+        $seriesId = [string]$item.SeriesId
+        $beforeSeason = $item.ParentIndexNumber
+        $beforeEpisode = $item.IndexNumber
+        $beforeSeasonId = [string]$item.SeasonId
+    }
+
     $state = [pscustomobject]@{
         RuleId = $target.RuleId
         Work = $target.Work
@@ -202,11 +220,11 @@ foreach ($target in $targets) {
         TargetEpisode = $target.TargetEpisode
         NfoExists = $nfoExists
         ItemFound = $itemFound
-        ItemId = if ($itemFound) { [string]$item.Id } else { "" }
-        SeriesId = if ($itemFound) { [string]$item.SeriesId } else { "" }
-        BeforeSeason = if ($itemFound) { $item.ParentIndexNumber } else { $null }
-        BeforeEpisode = if ($itemFound) { $item.IndexNumber } else { $null }
-        BeforeSeasonId = if ($itemFound) { [string]$item.SeasonId } else { "" }
+        ItemId = $itemId
+        SeriesId = $seriesId
+        BeforeSeason = $beforeSeason
+        BeforeEpisode = $beforeEpisode
+        BeforeSeasonId = $beforeSeasonId
         EpisodeRefresh = ""
         SeriesRefresh = ""
         AfterSeason = $null
@@ -264,7 +282,7 @@ if (-not $Apply) {
     if (-not $IncludeExisting) {
         Write-Host "Add -IncludeExisting only when old SKIP_EXISTING rows also need to be reprocessed."
     }
-    exit 0
+    return
 }
 
 $episodeRefreshStates = @($states | Where-Object { $_.EpisodeRefresh -eq "NEEDED" })
@@ -338,12 +356,16 @@ foreach ($state in $states) {
     $state.AfterSeasonId = [string]$item.SeasonId
 }
 
-$seriesIds = @($states | Where-Object {
-    $_.NfoExists -and $_.ItemFound -and
-    [int]$_.AfterSeason -eq [int]$_.TargetSeason -and
-    [int]$_.AfterEpisode -eq [int]$_.TargetEpisode -and
-    -not [string]::IsNullOrWhiteSpace([string]$_.SeriesId)
-} | ForEach-Object { [string]$_.SeriesId } | Select-Object -Unique)
+$seriesIdSet = @{}
+foreach ($state in $states) {
+    if (-not $state.NfoExists -or -not $state.ItemFound) { continue }
+    if ($null -eq $state.AfterSeason -or $null -eq $state.AfterEpisode) { continue }
+    if ([int]$state.AfterSeason -ne [int]$state.TargetSeason) { continue }
+    if ([int]$state.AfterEpisode -ne [int]$state.TargetEpisode) { continue }
+    if ([string]::IsNullOrWhiteSpace([string]$state.SeriesId)) { continue }
+    $seriesIdSet[[string]$state.SeriesId] = $true
+}
+$seriesIds = @($seriesIdSet.Keys)
 
 Write-Host ""
 Write-Host "Series to refresh: $($seriesIds.Count)"
