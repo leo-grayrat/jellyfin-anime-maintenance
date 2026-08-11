@@ -99,7 +99,7 @@ Hidden targets without visible owner:    0
 20 个 group 都确定存在跨不同 S/E 的错误关系，但有几个需要额外处理：
 
 - `攻壳机动队`：7 个 source 中有两个 S01E01、两个 S01E02、两个 S01E03、一个 S01E04。拆掉跨集大组后，同 S/E 的两个版本可能应该重新合并成合法 alternate versions。
-- `幼女战记（2017）`：错误组有 25 个 source，但 correction target 只有 12 个，另外 13 个 source 尚未纳入本轮规则映射。
+- `幼女战记（2017）`：错误组有 25 个 source，其中 12 个是本轮正片 correction target，另外 13 个此前未纳入映射。用户提示这些很可能包含迷你动画《ようじょしぇんき》。公开资料显示该迷你动画存在 #00～#12 共 13 个短篇，这与“12 个正片 + 13 个未知 source = 25”高度吻合；但在核对本机文件名之前，不把这 13 个 source 自动映射为该作品。
 - `靠死亡游戏混饭吃。`：组中有一个非 target 的 S01E10 source。
 - `名侦探光之美少女！`：唯一 mixed group 含一个 S01E11 target 和一个 correction log 外的 S2026E01 source。
 
@@ -128,4 +128,29 @@ experiments/jellyfin12-nfo-refresh/09-medalist-alternate-split-pilot.ps1
 DELETE /Videos/{ownerId}/AlternateSources
 ```
 
-先验证拆掉 stale relation 后，8 个物理 item 是否立即都能通过 normal query 和 `/Shows/{SeriesId}/Episodes` 独立可见。此 pilot 故意不自动 Series FullRefresh，以便一次只验证“清除 alternate relationship”这一变量。
+### Dry-run 结果
+
+结果存档：
+
+```text
+experiments/jellyfin12-nfo-refresh/results/10-medalist-alternate-split-pilot-dryrun.txt
+```
+
+前置校验通过：
+
+```text
+S02E02 normally visible
+S02E03 hidden
+S02E04 hidden
+S02E05 hidden
+S02E06 hidden
+S02E07 hidden
+S02E08 hidden
+S02E09 hidden
+Hidden members before split: 7 / 8
+Owner media-source count: 8
+```
+
+8 个成员的 CurrentKey 均已经等于 ExpectedKey，且组内没有未知 source，也没有同一 S/E 的合法多版本。因此该组适合作为第一次真正的 alternate unlink 实验。
+
+下一步仅对这个组执行 `-Apply`，验证 `DELETE /Videos/{ownerId}/AlternateSources` 是否会让 S02E02～S02E09 全部恢复 normal visibility。此 pilot 故意不自动 Series FullRefresh，以便一次只验证“清除 alternate relationship”这一变量。
