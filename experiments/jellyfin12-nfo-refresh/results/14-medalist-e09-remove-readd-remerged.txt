@@ -1,0 +1,41 @@
+=== Medalist S02E09 Remove / Re-add Pilot ===
+Date: 2026-08-12
+Server: Jellyfin 12.0.0 (v12.0-rc5 line under test)
+Result: RE-MERGED AS LOCAL ALTERNATE
+
+Preflight:
+- owner: af564551c864a8892b28736b0de926de (S02E02)
+- target: 59a625fe5a7b8584017e2707eea78cd3 (S02E09)
+- owner sources: 8
+- target normally visible: false
+- target expanded key: S02E09
+- target media/NFO paths existed and NFO explicitly reported S02E09
+
+Phase 1 - remove target media + same-basename NFO from all Jellyfin library paths:
+- initial state remained 8 sources for several polls
+- eventually reached:
+  ownerSources=7
+  ownerHasTarget=False
+  targetExpanded=False
+  targetNormal=False
+- therefore Jellyfin did remove the old S02E09 item and stale local-alternate relationship when the physical file disappeared.
+
+Phase 2 - restore the exact same NFO + video at the exact same original path:
+- initially owner stayed at 7 sources and target was absent
+- after Jellyfin detected the restored file, state became:
+  ownerSources=8
+  ownerHasTarget=True
+  targetNormal=False
+  targetExpanded=True
+  target key eventually S02E09
+  target media-source count=8
+  target SeasonId=<empty>
+  visible through Series=False
+
+Final classification:
+RESULT: RE-MERGED AS LOCAL ALTERNATE
+
+Interpretation:
+The stale group is not merely historical database residue. Removing the physical S02E09 file caused Jellyfin to delete the relationship, but re-adding the unchanged file caused Jellyfin 12 to recreate the same local-alternate grouping. Current import/resolver behavior can therefore reproduce the problem.
+
+No SQLite modification and no metadata FullRefresh were performed by this pilot.
