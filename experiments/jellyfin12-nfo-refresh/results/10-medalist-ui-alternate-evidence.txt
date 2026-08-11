@@ -1,0 +1,20 @@
+Observation: Jellyfin web UI alternate-version grouping is not limited to Fate/strange Fake
+Date: 2026-08-11
+Source: user visual inspection of the Jellyfin web UI after the 230/243 batch result
+Privacy: no local absolute paths stored here.
+
+Observed work: 金牌得主 第2期 (Medalist Season 2)
+
+The UI shows an Episode 2 entry with a version selector containing multiple physically different episode files. The user counted eight false "Episode 2" versions and noted that this is at least one additional example, not necessarily the only one.
+
+Why this changes the investigation:
+- The prior batch verifier queried Episodes with VideoTypes=VideoFile, which intentionally includes hidden owned/alternate members.
+- It verified each physical target's season number, episode number and SeasonId, but did not verify that the item was normally visible or that different expected episodes were not still grouped under one visible owner.
+- Therefore a row marked Result=OK can still be wrong in the Jellyfin UI if the physical item remains a hidden alternate version.
+
+This invalidates the earlier working assumption that Fate was the only remaining alternate-group edge case. Fate remains a confirmed example, but alternate-group integrity now needs to be audited across all correction targets before any targeted split repair is applied.
+
+Next action: run a read-only global alternate-group audit. Classify each group touching NFO correction targets as:
+1. legitimate multi-version group: all target members have the same expected S/E;
+2. definitely wrong group: target members have different expected S/E values;
+3. mixed/unknown group: target members share a group with media sources not covered by the correction target list.
