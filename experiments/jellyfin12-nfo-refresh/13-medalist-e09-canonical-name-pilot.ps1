@@ -213,7 +213,10 @@ $episodeNode = $nfo.SelectSingleNode("//episode")
 if ($null -eq $seasonNode -or $null -eq $episodeNode) { throw "NFO is missing <season> or <episode>." }
 if ([int]$seasonNode.InnerText -ne 2 -or [int]$episodeNode.InnerText -ne 9) { throw "NFO does not explicitly report S02E09." }
 
-$dir = Split-Path -LiteralPath $originalVideo -Parent
+# Use System.IO instead of Split-Path -LiteralPath ... -Parent. Those switches
+# belong to different PowerShell parameter sets and can raise AmbiguousParameterSet.
+$dir = [System.IO.Path]::GetDirectoryName($originalVideo)
+if ([string]::IsNullOrWhiteSpace($dir)) { throw "Could not determine video parent directory." }
 $videoName = [System.IO.Path]::GetFileName($originalVideo)
 $nfoName = [System.IO.Path]::GetFileName($originalNfo)
 $canonicalVideo = Join-Path $dir ($CanonicalPrefix + $videoName)
@@ -221,7 +224,6 @@ $canonicalNfo = Join-Path $dir ($CanonicalPrefix + $nfoName)
 if (Test-Path -LiteralPath $canonicalVideo) { throw "Canonical video path already exists: $canonicalVideo" }
 if (Test-Path -LiteralPath $canonicalNfo) { throw "Canonical NFO path already exists: $canonicalNfo" }
 
-# Find the one library root containing this file, and require realtime monitoring.
 $librariesRaw = Invoke-JfGet -Uri "$Server/Library/VirtualFolders"
 $libraries = @()
 foreach ($libraryEntry in $librariesRaw) { $libraries += $libraryEntry }
@@ -318,7 +320,6 @@ try {
     Write-Host ""
     Write-Host "=== Phase 2: add explicit S02E09 filename ==="
 
-    # Put NFO back first so it already exists when the video appears.
     Move-Item -LiteralPath $stagedNfo -Destination $canonicalNfo
     $nfoStaged = $false
     Move-Item -LiteralPath $stagedVideo -Destination $canonicalVideo
