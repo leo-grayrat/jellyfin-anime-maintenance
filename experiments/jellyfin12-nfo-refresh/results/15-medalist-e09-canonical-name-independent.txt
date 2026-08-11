@@ -1,0 +1,46 @@
+=== Medalist S02E09 Canonical-name Pilot ===
+Date: 2026-08-12
+Server: Jellyfin 12.0.0 (v12.0-rc5 line under test)
+Result: CANONICAL NAME STAYS INDEPENDENT
+
+Purpose:
+Test whether the same Medalist S02E09 video/NFO that re-merges as a LocalAlternateVersion under its original fansub filename will stay independent when re-added with an explicit S02E09 filename prefix.
+
+Preflight:
+- owner: af564551c864a8892b28736b0de926de (S02E02)
+- old target: 59a625fe5a7b8584017e2707eea78cd3 (S02E09)
+- owner sources: 8
+- old target normally visible: false
+- old target expanded key: S02E09
+- NFO explicitly reported season 2 / episode 9
+- containing library had realtime monitoring enabled
+
+Phase 1 - remove original-name S02E09:
+- Jellyfin eventually reached ownerSources=7
+- owner no longer contained the old path
+- old expanded item disappeared
+- therefore the prior local-alternate relationship was actually removed before the canonical-name test
+
+Phase 2 - add the same video and NFO back with explicit prefix:
+- canonical filename form: S02E09 - <original fansub filename>
+- Jellyfin created a new item id: 781841421e76992f6ac73ddaf5ccb55f
+- final stable state:
+  owner source count:       7
+  owner contains canonical: false
+  target normally visible:  true
+  target expanded visible:  true
+  target current key:       S02E09
+  target media-source count:1
+  target SeriesId:          1e343af25a95b525ae23adc50142693a
+  target SeasonId:          d7b89e4562f216b0b4a23f8ef8e48d27
+  visible through Series:   true
+
+Final classification:
+RESULT: CANONICAL NAME STAYS INDEPENDENT
+
+Interpretation:
+Together with the preceding remove/re-add pilot, this proves the problem is not merely stale database residue. Re-adding the unchanged original filename recreated the bad 8-source group, while re-adding the same media/NFO with an explicit S02E09 prefix produced an independent Episode.
+
+The Jellyfin v12.0-rc5 code path groups TV files into local alternate versions from EpisodePathParser-derived keys before later NFO metadata correction. A broad episode expression such as ([0-9]+)-([0-9]+) can match ancestor quarter directories such as 2026-01 when parsing the full path. An explicit SxxEyy marker at the start of the filename matches an earlier, more specific episode rule and prevents that false grouping in this pilot.
+
+No SQLite modification and no metadata FullRefresh were performed by this pilot.
