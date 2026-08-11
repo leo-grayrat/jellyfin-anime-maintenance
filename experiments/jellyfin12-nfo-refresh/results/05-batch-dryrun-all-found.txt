@@ -1,0 +1,25 @@
+Experiment: batch dry-run after alternate-version query fix
+Script version: d9ae8ff7f3fa8f18d1fd6f10a662c8ee8b95c3c8
+Date: 2026-08-11
+Status: DRY RUN
+Privacy: local repository path omitted.
+
+Jellyfin 12 NFO Metadata Refresher
+Mode: DRY RUN (no Jellyfin metadata will be changed)
+
+Server version: 12.0.0
+Targets from run log: 243
+Reading current Jellyfin episodes (including alternate versions)...
+Episode items returned by Jellyfin: 676
+NFO missing: 0
+Jellyfin item missing: 0
+Episode numbers need refresh: 125
+Episode numbers already correct: 118
+
+Dry run finished.
+
+Interpretation:
+- Adding VideoTypes=VideoFile made the previously hidden alternate/owned episode versions visible.
+- All 243 target physical paths were now found in Jellyfin.
+- The earlier 38 ITEM_NOT_FOUND rows were therefore a query/grouping problem, not evidence that the media files disappeared.
+- Detailed CSV review showed the 125 rows needing refresh had correct episode numbers; the mismatch was the season number.
