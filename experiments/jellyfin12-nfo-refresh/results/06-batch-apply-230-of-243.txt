@@ -1,0 +1,71 @@
+Experiment: full batch APPLY
+Script version: d9ae8ff7f3fa8f18d1fd6f10a662c8ee8b95c3c8
+Date: 2026-08-11
+Status: APPLY COMPLETED WITH 13 NON-OK ROWS
+Privacy: local repository/media paths omitted.
+
+Jellyfin 12 NFO Metadata Refresher
+Mode: APPLY (Jellyfin metadata will be refreshed)
+
+Server version: 12.0.0
+Targets from run log: 243
+Reading current Jellyfin episodes (including alternate versions)...
+Episode items returned by Jellyfin: 676
+NFO missing: 0
+Jellyfin item missing: 0
+Episode numbers need refresh: 125
+Episode numbers already correct: 118
+
+Queueing episode FullRefresh requests...
+Episode refresh requests queued: 125
+Episode refresh pending: 84
+Episode refresh pending: 80
+Episode refresh pending: 67
+Episode refresh pending: 65
+Episode refresh pending: 56
+Episode refresh pending: 50
+Episode refresh pending: 40
+Episode refresh pending: 39
+Episode refresh pending: 30
+Episode refresh pending: 22
+Episode refresh pending: 13
+Episode refresh pending: 1
+Episode refresh pending: 0
+
+Series to refresh: 26
+[26 Series FullRefresh requests were queued]
+
+Season relink pending: 111
+Season relink pending: 86
+Season relink pending: 94
+Season relink pending: 103
+Season relink pending: 84
+Season relink pending: 78
+Season relink pending: 65
+Season relink pending: 64
+Season relink pending: 62
+Season relink pending: 61
+Season relink pending: 49
+Season relink pending: 37
+Season relink pending: 36
+Season relink pending: 31
+Season relink pending: 30
+Season relink pending: 29
+Season relink pending: 18
+Season relink pending: 13
+[remained at 13 until timeout]
+
+Finished.
+OK: 230
+Not OK: 13
+
+CSV review of the 13 non-OK rows:
+- All 13 belong to Fate/strange Fake.
+- They are exactly S01E01 through S01E13.
+- Episode FullRefresh succeeded: ParentIndexNumber=1 and IndexNumber=1..13 are correct.
+- Their SeasonId is empty because the Series has no Season 1 object.
+- The same title's S00E01 special successfully links to the existing Specials season.
+
+Conclusion:
+- Main batch workflow succeeded completely for 230 / 243 targets.
+- Remaining problem is not NFO season import. It is creation / visibility of a missing Season 1 for this one Series.
