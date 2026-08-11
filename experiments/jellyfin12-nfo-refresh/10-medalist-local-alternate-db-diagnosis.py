@@ -66,6 +66,15 @@ def display_guid(value):
     return " / ".join(sorted(candidates))
 
 
+def decode_json(value):
+    """Decode JSON from either text or bytes for older Python 3 versions."""
+    if isinstance(value, memoryview):
+        value = value.tobytes()
+    if isinstance(value, bytes):
+        value = value.decode("utf-8-sig")
+    return json.loads(value)
+
+
 def api_system_info(server, api_key):
     server = server.rstrip("/")
     auth = (
@@ -74,7 +83,7 @@ def api_system_info(server, api_key):
     )
     req = urllib.request.Request(server + "/System/Info", headers={"Authorization": auth})
     with urllib.request.urlopen(req, timeout=15) as response:
-        return json.load(response)
+        return decode_json(response.read())
 
 
 def locate_db(explicit, info):
@@ -219,14 +228,14 @@ def main():
             data = pick(row, base_cols, "Data")
             if data:
                 try:
-                    parsed = json.loads(data)
+                    parsed = decode_json(data)
                     local_alt = find_nested_key(parsed, "LocalAlternateVersions")
                     linked_alt = find_nested_key(parsed, "LinkedAlternateVersions")
                     if local_alt is not None:
                         print("  Data.LocalAlternateVersions: {0}".format(local_alt))
                     if linked_alt is not None:
                         print("  Data.LinkedAlternateVersions: {0}".format(linked_alt))
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, UnicodeDecodeError):
                     pass
             print()
 
