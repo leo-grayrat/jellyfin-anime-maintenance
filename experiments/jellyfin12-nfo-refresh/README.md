@@ -20,7 +20,7 @@ docs/history/2026-08-11-jellyfin12-nfo-refresh.md
 
 因此这里同时保存：
 
-- 未进入 Git 历史的一次性实验脚本；
+- 未进入正式工具的一次性实验脚本；
 - 每次实际运行的关键输出；
 - 已进入 Git 历史的批量脚本版本对应 commit；
 - 当前仍未解决的 Fate/strange Fake 特例。
@@ -33,9 +33,10 @@ docs/history/2026-08-11-jellyfin12-nfo-refresh.md
 | `02-single-episode-refresh.ps1` | 已运行，成功 | 改用 `/Items?Ids=...` 读取状态，验证 Episode FullRefresh 会读取 NFO 的 `<season>` |
 | `03-series-relink.ps1` | 已运行，成功 | 验证 Series FullRefresh 会把 Episode 从旧 SeasonId 重新挂到已有的目标 Season |
 | `04-fate-filesystem-refresh.ps1` | 已运行，失败 | 尝试用 `/Library/Media/Updated` 促使 Fate 创建缺失的 Season 1；180 秒内没有创建 |
-| `05-fate-readonly-diagnosis.ps1` | **尚未运行** | 只读检查 Fate 13 集是否属于 alternate/owned item、是否对 Series 可见、旧 Season 2026 是否仍存在 |
+| `05-fate-readonly-diagnosis.ps1` | 已运行，只读 | 证实 Fate S01E01-S01E13 全部是 expanded 查询才可见的 owned/alternate 项，并且对 Series 不可见 |
+| `06-fate-alternate-group-diagnosis.ps1` | **尚未运行** | 只读扫描正常可见 Episode 的 `MediaSources`，反向找出每个 Fate 隐藏 Episode 挂在哪个 visible owner / alternate group 下 |
 
-脚本中的 API Key 均使用占位符；历史结果中的本机媒体绝对路径已脱敏。
+脚本中的 API Key 均使用参数传入；历史结果中的本机媒体绝对路径已脱敏。
 
 ## 正式批量脚本版本
 
@@ -68,16 +69,19 @@ git show d9ae8ff7f3fa8f18d1fd6f10a662c8ee8b95c3c8:scripts/refresh_jellyfin_nfo_1
 5. `05-batch-dryrun-all-found.txt`：加入 alternate version 查询后 243/243 全部找到，125 个需要刷新。
 6. `06-batch-apply-230-of-243.txt`：正式 Apply 后 230/243 完整成功，剩余 13 个全部属于 Fate/strange Fake S01E01-S01E13。
 7. `07-fate-filesystem-refresh-failed.txt`：`/Library/Media/Updated` 没有创建 Fate Season 1。
+8. `08-fate-readonly-diagnosis-owned-items.txt`：证实 13 个 Fate 正片均为 normal 查询不可见、expanded 查询可见、Series 不可见的 owned/alternate 项；SeriesId 正确，SeasonId 为空。
 
 ## 当前结论
 
-截至本存档建立时，已经实际验证：
+截至目前已经实际验证：
 
 - Jellyfin 12.0 的 Episode FullRefresh 会尊重 episode NFO 中显式 `<season>`；
 - Episode 的 `ParentIndexNumber` 修正后，若目标 Season 对象已经存在，Series FullRefresh 可以正确更新 `SeasonId` / `SeasonName`；
 - 普通 `/Items` 查询可能折叠此前被识别成同一集的 alternate/owned 视频，`VideoTypes=VideoFile` 能把这些物理视频重新纳入查询；
 - 批量流程对本轮 243 个目标中的 230 个已完整生效；
-- Fate/strange Fake 的 13 个正片已经得到正确 S01E01-S01E13 数字，但 Jellyfin 没有创建 Season 1，仍是唯一未解决特例；
+- Fate/strange Fake 的 S01E01-S01E13 已经得到正确季号和集号，但 13 个条目全部被 owned/alternate 关系隐藏，因此 `/Shows/{SeriesId}/Episodes` 只看得到 S00E01；
+- 这 13 个条目的 `SeriesId` 都正确，所以问题已经从 NFO / SeriesId 缩小到 Jellyfin 的 alternate/owned grouping state；
+- 旧 Season 2026 对象已经不存在，而 Season 1 没有被创建；
 - `/Library/Media/Updated` 不能视为“强制重新构建目录层级”的 API，这个假设已经被实验推翻。
 
-下一步是运行 `05-fate-readonly-diagnosis.ps1`，先确认 Fate 13 集为什么没有被 Series 的季重建逻辑看见，再决定是否需要真正的 library scan、重建该 Series，或针对 Jellyfin 上游继续排查。
+下一步运行 `06-fate-alternate-group-diagnosis.ps1`。它只读取 `MediaSources`，目标是找出 13 个隐藏条目分别挂在哪些正常可见的 owner item 下，以及这些 owner 是否属于同一个或多个 alternate group。确认关系图之后，再决定是否使用 Jellyfin 官方 `DELETE /Videos/{itemId}/AlternateSources` 拆分错误关系。
