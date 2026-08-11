@@ -1,0 +1,41 @@
+Experiment: 02-single-episode-refresh.ps1
+Date: 2026-08-11
+Status: SUCCESS FOR EPISODE NUMBERING
+Privacy: local media path replaced with <MEDIA_ROOT>.
+
+=== Before FullRefresh ===
+
+Name              : 对秘密警察伪装作战
+Path              : <MEDIA_ROOT>\SPY×FAMILY Season 3 (2025)\[Sakurato] Spy x Family (2025) [07]....mp4
+IndexNumber       : 7
+ParentIndexNumber : 1
+SeasonName        : 第 1 季
+SeasonId          : 13c0f408fbfad2afc82b81a145541d5b
+SeriesName        : 间谍过家家
+
+Requesting FullRefresh...
+Refresh request accepted.
+
+Waiting for Jellyfin to process the metadata...
+Check 1/15 : Season=1, Episode=7
+Check 2/15 : Season=1, Episode=7
+Check 3/15 : Season=3, Episode=7
+
+=== After FullRefresh ===
+
+Name              : 对秘密警察伪装作战
+Path              : <MEDIA_ROOT>\SPY×FAMILY Season 3 (2025)\[Sakurato] Spy x Family (2025) [07]....mp4
+IndexNumber       : 7
+ParentIndexNumber : 3
+SeasonName        : 第 1 季
+SeasonId          : 13c0f408fbfad2afc82b81a145541d5b
+SeriesName        : 间谍过家家
+
+=== Result ===
+SUCCESS: Jellyfin changed the episode to S03E07.
+The NFO season is respected during FullRefresh.
+
+Important follow-up observation:
+- ParentIndexNumber was corrected to 3.
+- SeasonName and SeasonId were still attached to Season 1.
+- This led to the separate Series FullRefresh experiment.
