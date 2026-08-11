@@ -1,0 +1,33 @@
+Experiment: batch dry-run before alternate-version query fix
+Script version: scripts/refresh_jellyfin_nfo_12.ps1 around commits c7c8042 / bc478d9
+Date: 2026-08-11
+Status: DRY RUN
+Privacy: local repository path omitted.
+
+Jellyfin 12 NFO Metadata Refresher
+Mode: DRY RUN (no Jellyfin metadata will be changed)
+
+Server version: 12.0.0
+Targets from run log: 243
+Reading current Jellyfin episodes...
+NFO missing: 0
+Jellyfin item missing: 38
+Episode numbers need refresh: 108
+Episode numbers already correct: 97
+
+Dry run finished.
+
+Derived counts:
+- Targets: 243
+- NFO present: 243 / 243
+- Jellyfin Episode found by ordinary query: 205 / 243
+- ITEM_NOT_FOUND: 38
+
+The 38 missing rows were not random. They clustered in files that had previously been parsed as duplicate/same-episode entries, including groups from:
+- 幼女战记（2017）
+- 上伊那牡丹，醉姿如百合
+- SPY×FAMILY Season 3
+- 葬送的芙莉莲 第2期
+- 午夜的倾心旋律
+
+This result led to investigation of Jellyfin alternate/owned video versions rather than treating the 38 rows as missing media files.
