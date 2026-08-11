@@ -1,0 +1,72 @@
+Experiment: 04-fate-filesystem-refresh.ps1
+Date: 2026-08-11
+Status: FAILED TO CREATE SEASON 1
+Privacy: local Series path omitted.
+
+=== Fate/strange Fake Season Repair ===
+
+Series name: 命运／奇异赝品
+Series path: <MEDIA_ROOT>\Fate strange Fake (2026)
+Series ID:   5593b2b4c108e8a7816754533aae41ef
+
+=== Before filesystem refresh ===
+
+Seasons:
+
+Episodes:
+
+Season 1 does not exist.
+Reporting the series directory as modified...
+Filesystem update was reported.
+
+Waiting for Jellyfin to create Season 1...
+Check 1/36 : Season 1 not found yet.
+Check 2/36 : Season 1 not found yet.
+Check 3/36 : Season 1 not found yet.
+Check 4/36 : Season 1 not found yet.
+Check 5/36 : Season 1 not found yet.
+Check 6/36 : Season 1 not found yet.
+Check 7/36 : Season 1 not found yet.
+Check 8/36 : Season 1 not found yet.
+Check 9/36 : Season 1 not found yet.
+Check 10/36 : Season 1 not found yet.
+Check 11/36 : Season 1 not found yet.
+Check 12/36 : Season 1 not found yet.
+Check 13/36 : Season 1 not found yet.
+Check 14/36 : Season 1 not found yet.
+Check 15/36 : Season 1 not found yet.
+Check 16/36 : Season 1 not found yet.
+Check 17/36 : Season 1 not found yet.
+Check 18/36 : Season 1 not found yet.
+Check 19/36 : Season 1 not found yet.
+Check 20/36 : Season 1 not found yet.
+Check 21/36 : Season 1 not found yet.
+Check 22/36 : Season 1 not found yet.
+Check 23/36 : Season 1 not found yet.
+Check 24/36 : Season 1 not found yet.
+Check 25/36 : Season 1 not found yet.
+Check 26/36 : Season 1 not found yet.
+Check 27/36 : Season 1 not found yet.
+Check 28/36 : Season 1 not found yet.
+Check 29/36 : Season 1 not found yet.
+Check 30/36 : Season 1 not found yet.
+Check 31/36 : Season 1 not found yet.
+Check 32/36 : Season 1 not found yet.
+Check 33/36 : Season 1 not found yet.
+Check 34/36 : Season 1 not found yet.
+Check 35/36 : Season 1 not found yet.
+Check 36/36 : Season 1 not found yet.
+
+=== Result ===
+FAILED: filesystem refresh did not create Season 1.
+
+No files were modified by this script.
+Do not rerun the full 243-episode batch.
+
+Later source review changed the interpretation:
+- POST /Library/Media/Updated calls ReportFileSystemChanged(path).
+- FileRefresher resolves an existing BaseItem and calls ChangedExternally().
+- ChangedExternally() queues a metadata refresh on that existing item.
+- Therefore this endpoint is not equivalent to a structural library rescan.
+
+The failed experiment invalidated the earlier assumption that reporting the directory as Modified would force creation of a missing Season object.
