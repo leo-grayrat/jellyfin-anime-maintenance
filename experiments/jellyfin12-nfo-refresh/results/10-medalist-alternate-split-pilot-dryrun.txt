@@ -1,0 +1,32 @@
+Experiment: 09-medalist-alternate-split-pilot.ps1
+Date: 2026-08-11
+Status: DRY RUN PASSED; SAFE CANDIDATE FOR FIRST SPLIT APPLY
+Privacy: local media paths omitted.
+
+OwnerId: af564551c864a8892b28736b0de926de
+SeriesId: 1e343af25a95b525ae23adc50142693a
+Server: Jellyfin 12.0.0
+
+Preflight result:
+- Expected 8 correction targets were found in the owner alternate group.
+- Owner media-source count: 8.
+- Exactly one member is normally visible: S02E02 owner.
+- Seven members are hidden and only expanded-visible.
+- Every member already has the intended current S/E number.
+- No unknown source is present in this group.
+- No same-S/E duplicate version is present in this group.
+
+Members:
+S02E02 af564551c864a8892b28736b0de926de normally-visible
+S02E03 b989bbc54ab7fbd39a4a9962f193a70a hidden
+S02E04 a3073095ba7259a5f91b88cf3ee5835c hidden
+S02E05 5a6d6c57d8c34045ca88256f508d8a4a hidden
+S02E06 a83679a94904aa323c8296277e830ec5 hidden
+S02E07 8a8290e4df57d7013c13d21788062dcb hidden
+S02E08 3dfc807ba4ae3faeea6bb3a1349a49c0 hidden
+S02E09 59a625fe5a7b8584017e2707eea78cd3 hidden
+
+Conclusion:
+This group is an unusually clean pilot for DELETE /Videos/{ownerId}/AlternateSources because the stale group contains only known cross-episode members and there are no legitimate same-episode alternate versions to preserve/rebuild afterward.
+
+No Jellyfin data was changed in this run.
