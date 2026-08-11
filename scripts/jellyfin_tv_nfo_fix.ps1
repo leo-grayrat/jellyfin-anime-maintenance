@@ -41,10 +41,10 @@ function New-TvShowNfoContent {
 }
 
 if (-not (Test-Path -LiteralPath $BangumiRoot -PathType Container)) {
-    throw "找不到动画根目录：$BangumiRoot"
+    throw "Anime root directory not found: $BangumiRoot"
 }
 if (-not (Test-Path -LiteralPath $RulesPath -PathType Leaf)) {
-    throw "找不到规则文件：$RulesPath"
+    throw "Rules file not found: $RulesPath"
 }
 
 $config = Get-Content -LiteralPath $RulesPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -66,19 +66,19 @@ function Add-Log {
 }
 
 Write-Host ""
-Write-Host "Jellyfin TV 动画 NFO 修正器"
+Write-Host "Jellyfin TV Anime NFO Fixer"
 if ($Apply) {
-    Write-Host "模式：实际写入" -ForegroundColor Yellow
+    Write-Host "Mode: APPLY (files will be written)" -ForegroundColor Yellow
 } else {
-    Write-Host "模式：预演（不会写文件）" -ForegroundColor Cyan
+    Write-Host "Mode: DRY RUN (no files will be written)" -ForegroundColor Cyan
 }
-Write-Host "动画根目录：$BangumiRoot"
+Write-Host "Anime root: $BangumiRoot"
 Write-Host ""
 
 foreach ($rule in $config.rules) {
     $dir = Join-Path $BangumiRoot $rule.relative_dir
     if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
-        Write-Host "[目录不存在，跳过] $($rule.work) :: $dir" -ForegroundColor DarkYellow
+        Write-Host "[SKIP missing directory] $($rule.work) :: $dir" -ForegroundColor DarkYellow
         continue
     }
 
@@ -104,7 +104,7 @@ foreach ($rule in $config.rules) {
 
         $season = [int]$rule.season
         if ($episode -lt 0) {
-            Write-Warning "计算得到非法集数，已跳过：$($file.FullName)"
+            Write-Warning "Calculated an invalid episode number; skipped: $($file.FullName)"
             continue
         }
 
@@ -114,15 +114,15 @@ foreach ($rule in $config.rules) {
         if ($planned.ContainsKey($key)) {
             $old = $planned[$key]
             if ($old.Season -ne $season -or $old.Episode -ne $episode) {
-                throw "规则冲突：$nfoPath 同时得到 S$($old.Season)E$($old.Episode) 与 S${season}E${episode}"
+                throw "Rule conflict: $nfoPath maps to both S$($old.Season)E$($old.Episode) and S${season}E${episode}"
             }
             continue
         }
         $planned[$key] = @{ Season=$season; Episode=$episode; RuleId=$rule.id }
 
         if ((Test-Path -LiteralPath $nfoPath -PathType Leaf) -and -not $OverwriteExisting) {
-            Write-Host "[已有 NFO，跳过] $($file.Name)" -ForegroundColor DarkYellow
-            Add-Log $rule.id $rule.work $file.FullName $nfoPath $season $episode "SKIP_EXISTING" "已有 NFO；未覆盖"
+            Write-Host "[SKIP existing NFO] $($file.Name)" -ForegroundColor DarkYellow
+            Add-Log $rule.id $rule.work $file.FullName $nfoPath $season $episode "SKIP_EXISTING" "Existing NFO was not overwritten"
             continue
         }
 
@@ -130,38 +130,38 @@ foreach ($rule in $config.rules) {
 
         if ($Apply) {
             Write-Utf8NoBom -Path $nfoPath -Content $content
-            Write-Host ("[写入] S{0:D2}E{1:D2}  {2}" -f $season,$episode,$file.Name) -ForegroundColor Green
-            Add-Log $rule.id $rule.work $file.FullName $nfoPath $season $episode "WRITE" "已写入最小 episode NFO"
+            Write-Host ("[WRITE] S{0:D2}E{1:D2}  {2}" -f $season,$episode,$file.Name) -ForegroundColor Green
+            Add-Log $rule.id $rule.work $file.FullName $nfoPath $season $episode "WRITE" "Minimal episode NFO written"
         } else {
-            Write-Host ("[预演] S{0:D2}E{1:D2}  {2}" -f $season,$episode,$file.Name)
-            Add-Log $rule.id $rule.work $file.FullName $nfoPath $season $episode "DRY_RUN" "预演，不写文件"
+            Write-Host ("[DRY RUN] S{0:D2}E{1:D2}  {2}" -f $season,$episode,$file.Name)
+            Add-Log $rule.id $rule.work $file.FullName $nfoPath $season $episode "DRY_RUN" "Dry run only; no file written"
         }
     }
 }
 
-# 少数 Series 本身也需要最小 tvshow.nfo；目前只有 100 女友第 3 期。
+# A small number of series also need a minimal tvshow.nfo with provider IDs.
 foreach ($seriesNfo in $config.series_nfo) {
     $dir = Join-Path $BangumiRoot $seriesNfo.relative_dir
     if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
-        Write-Host "[Series 目录不存在，跳过] $($seriesNfo.work) :: $dir" -ForegroundColor DarkYellow
+        Write-Host "[SKIP missing series directory] $($seriesNfo.work) :: $dir" -ForegroundColor DarkYellow
         continue
     }
 
     $nfoPath = Join-Path $dir "tvshow.nfo"
     if ((Test-Path -LiteralPath $nfoPath -PathType Leaf) -and -not $OverwriteExisting) {
-        Write-Host "[已有 tvshow.nfo，跳过] $($seriesNfo.work)" -ForegroundColor DarkYellow
-        Add-Log "series-nfo" $seriesNfo.work "" $nfoPath "" "" "SKIP_EXISTING" "已有 tvshow.nfo；未覆盖"
+        Write-Host "[SKIP existing tvshow.nfo] $($seriesNfo.work)" -ForegroundColor DarkYellow
+        Add-Log "series-nfo" $seriesNfo.work "" $nfoPath "" "" "SKIP_EXISTING" "Existing tvshow.nfo was not overwritten"
         continue
     }
 
     $content = New-TvShowNfoContent -ProviderIds $seriesNfo.provider_ids
     if ($Apply) {
         Write-Utf8NoBom -Path $nfoPath -Content $content
-        Write-Host "[写入 tvshow.nfo] $($seriesNfo.work)" -ForegroundColor Green
-        Add-Log "series-nfo" $seriesNfo.work "" $nfoPath "" "" "WRITE" "写入最小 provider IDs"
+        Write-Host "[WRITE tvshow.nfo] $($seriesNfo.work)" -ForegroundColor Green
+        Add-Log "series-nfo" $seriesNfo.work "" $nfoPath "" "" "WRITE" "Minimal provider IDs written"
     } else {
-        Write-Host "[预演 tvshow.nfo] $($seriesNfo.work)"
-        Add-Log "series-nfo" $seriesNfo.work "" $nfoPath "" "" "DRY_RUN" "预演，不写文件"
+        Write-Host "[DRY RUN tvshow.nfo] $($seriesNfo.work)"
+        Add-Log "series-nfo" $seriesNfo.work "" $nfoPath "" "" "DRY_RUN" "Dry run only; no file written"
     }
 }
 
@@ -172,14 +172,14 @@ $dryCount = @($log | Where-Object { $_.Action -eq "DRY_RUN" }).Count
 $skipCount = @($log | Where-Object { $_.Action -eq "SKIP_EXISTING" }).Count
 
 Write-Host ""
-Write-Host "完成。"
+Write-Host "Finished."
 if ($Apply) {
-    Write-Host "实际写入：$writeCount；已有 NFO 跳过：$skipCount"
+    Write-Host "Written: $writeCount; existing NFO skipped: $skipCount"
 } else {
-    Write-Host "预演匹配：$dryCount；已有 NFO 跳过：$skipCount"
-    Write-Host "确认无误后执行："
-    Write-Host "  .\jellyfin_tv_nfo_fix.ps1 -Apply"
+    Write-Host "Dry-run matches: $dryCount; existing NFO skipped: $skipCount"
+    Write-Host "If the preview is correct, run:"
+    Write-Host "  .\scripts\jellyfin_tv_nfo_fix.ps1 -Apply"
 }
-Write-Host "运行日志：$LogPath"
+Write-Host "Run log: $LogPath"
 Write-Host ""
-Write-Host "说明：2026 年 7 月仍在更新的异常命名已写成开放规则。新一集下载完成后再次运行本脚本即可自动为新文件生成对应 NFO。"
+Write-Host "Future-episode rules are enabled for selected currently-airing series. Re-run this script after new episodes are added."
