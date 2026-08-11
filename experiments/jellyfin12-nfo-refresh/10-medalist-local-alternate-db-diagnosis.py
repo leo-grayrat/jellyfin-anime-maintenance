@@ -4,9 +4,6 @@
 This script never writes to Jellyfin or to jellyfin.db. It inspects the v12
 SQLite database to distinguish LocalAlternateVersion / LinkedAlternateVersion,
 OwnerId, and PrimaryVersionId relationships after the API unlink pilot.
-
-The script intentionally avoids modern Python type-annotation syntax so it can
-run on older Python 3 installations commonly found on Windows.
 """
 
 import argparse
@@ -33,11 +30,11 @@ ITEM_IDS = [
 
 
 def parse_args():
-    p = argparse.ArgumentParser()
-    p.add_argument("--api-key", required=True)
-    p.add_argument("--server", default="http://127.0.0.1:8096")
-    p.add_argument("--db", help="Optional explicit path to jellyfin.db")
-    return p.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--api-key", required=True)
+    parser.add_argument("--server", default="http://127.0.0.1:8096")
+    parser.add_argument("--db", help="Optional explicit path to jellyfin.db")
+    return parser.parse_args()
 
 
 def normalize_guid(value):
@@ -66,13 +63,26 @@ def display_guid(value):
     return " / ".join(sorted(candidates))
 
 
-def decode_json(value):
-    """Decode JSON from either text or bytes for older Python 3 versions."""
+def decode_json(value, source):
+    """Decode JSON after explicitly normalizing binary input to text."""
     if isinstance(value, memoryview):
         value = value.tobytes()
     if isinstance(value, bytes):
         value = value.decode("utf-8-sig")
-    return json.loads(value)
+    if not isinstance(value, str):
+        raise TypeError(
+            "{0}: expected JSON text after normalization, got {1}".format(
+                source, type(value).__name__
+            )
+        )
+    try:
+        return json.loads(value)
+    except Exception as exc:
+        raise RuntimeError(
+            "{0}: JSON decode failed using {1}: {2}".format(
+                source, getattr(json, "__file__", "<unknown>"), exc
+            )
+        ) from exc
 
 
 def api_system_info(server, api_key):
@@ -81,9 +91,13 @@ def api_system_info(server, api_key):
         'MediaBrowser Client="db-diagnosis", Device="Python", '
         'DeviceId="db-diagnosis", Version="1.0", Token="%s"' % api_key
     )
-    req = urllib.request.Request(server + "/System/Info", headers={"Authorization": auth})
-    with urllib.request.urlopen(req, timeout=15) as response:
-        return decode_json(response.read())
+    request = urllib.request.Request(
+        server + "/System/Info",
+        headers={"Authorization": auth},
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        payload = response.read()
+    return decode_json(payload, "GET /System/Info")
 
 
 def locate_db(explicit, info):
@@ -122,26 +136,31 @@ def locate_db(explicit, info):
 
 def open_readonly(db_path):
     uri = db_path.resolve().as_uri() + "?mode=ro"
-    con = sqlite3.connect(uri, uri=True, timeout=10)
-    con.row_factory = sqlite3.Row
-    return con
+    connection = sqlite3.connect(uri, uri=True, timeout=10)
+    connection.row_factory = sqlite3.Row
+    return connection
 
 
-def find_table(con, wanted):
-    rows = con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+def find_table(connection, wanted):
+    rows = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()
     for row in rows:
         name = row[0]
         if str(name).lower() == wanted.lower():
             return str(name)
     raise RuntimeError(
         "Table {0!r} not found. Available tables: {1}".format(
-            wanted, ", ".join(str(r[0]) for r in rows)
+            wanted, ", ".join(str(row[0]) for row in rows)
         )
     )
 
 
-def table_columns(con, table):
-    return {str(row[1]) for row in con.execute('PRAGMA table_info("{0}")'.format(table))}
+def table_columns(connection, table):
+    return {
+        str(row[1])
+        for row in connection.execute('PRAGMA table_info("{0}")'.format(table))
+    }
 
 
 def pick(row, columns, name):
@@ -170,42 +189,64 @@ def find_nested_key(obj, key_name):
 
 def main():
     args = parse_args()
-    info = api_system_info(args.server, args.api_key)
-    db_path = locate_db(args.db, info)
 
     print("=== Medalist Local Alternate DB Diagnosis ===")
     print("Mode: READ ONLY")
-    print("Python: {0}".format(sys.version.split()[0]))
-    print("Server version: {0}".format(info.get("Version")))
-    print("Database: {0}".format(db_path))
+    print("Python: {0}".format(sys.version.replace("\n", " ")))
+    print("Python executable: {0}".format(sys.executable))
+    print("json module: {0}".format(getattr(json, "__file__", "<unknown>")))
     print()
 
-    con = open_readonly(db_path)
+    print("[Stage 1/4] Reading Jellyfin /System/Info ...")
+    info = api_system_info(args.server, args.api_key)
+    print("[Stage 1/4] OK - server version: {0}".format(info.get("Version")))
+
+    print("[Stage 2/4] Locating jellyfin.db ...")
+    db_path = locate_db(args.db, info)
+    print("[Stage 2/4] OK - database: {0}".format(db_path))
+
+    print("[Stage 3/4] Opening SQLite database read-only ...")
+    connection = open_readonly(db_path)
+    print("[Stage 3/4] OK")
+
     try:
-        base_table = find_table(con, "BaseItems")
-        linked_table = find_table(con, "LinkedChildren")
-        base_cols = table_columns(con, base_table)
-        linked_cols = table_columns(con, linked_table)
+        print("[Stage 4/4] Reading BaseItems and LinkedChildren ...")
+        base_table = find_table(connection, "BaseItems")
+        linked_table = find_table(connection, "LinkedChildren")
+        base_cols = table_columns(connection, base_table)
+        linked_cols = table_columns(connection, linked_table)
 
         required_base = {"Id", "Type", "OwnerId", "PrimaryVersionId", "PresentationUniqueKey"}
         missing_base = sorted(required_base - base_cols)
         if missing_base:
-            raise RuntimeError("BaseItems is missing expected columns: " + ", ".join(missing_base))
+            raise RuntimeError(
+                "BaseItems is missing expected columns: " + ", ".join(missing_base)
+            )
 
         required_link = {"ParentId", "ChildId", "ChildType"}
         missing_link = sorted(required_link - linked_cols)
         if missing_link:
-            raise RuntimeError("LinkedChildren is missing expected columns: " + ", ".join(missing_link))
+            raise RuntimeError(
+                "LinkedChildren is missing expected columns: " + ", ".join(missing_link)
+            )
 
-        base_rows = con.execute('SELECT * FROM "{0}"'.format(base_table)).fetchall()
+        base_rows = connection.execute(
+            'SELECT * FROM "{0}"'.format(base_table)
+        ).fetchall()
         by_expected = {}
         for row in base_rows:
             for expected in ITEM_IDS:
                 if matches(row["Id"], expected):
                     by_expected[expected] = row
 
-        linked_rows = con.execute('SELECT * FROM "{0}"'.format(linked_table)).fetchall()
-        owner_links = [row for row in linked_rows if matches(row["ParentId"], OWNER_ID)]
+        linked_rows = connection.execute(
+            'SELECT * FROM "{0}"'.format(linked_table)
+        ).fetchall()
+        owner_links = [
+            row for row in linked_rows if matches(row["ParentId"], OWNER_ID)
+        ]
+        print("[Stage 4/4] OK")
+        print()
 
         print("=== BaseItems ===")
         for idx, expected in enumerate(ITEM_IDS, start=2):
@@ -228,15 +269,15 @@ def main():
             data = pick(row, base_cols, "Data")
             if data:
                 try:
-                    parsed = decode_json(data)
+                    parsed = decode_json(data, "BaseItems.Data for {0}".format(key))
                     local_alt = find_nested_key(parsed, "LocalAlternateVersions")
                     linked_alt = find_nested_key(parsed, "LinkedAlternateVersions")
                     if local_alt is not None:
                         print("  Data.LocalAlternateVersions: {0}".format(local_alt))
                     if linked_alt is not None:
                         print("  Data.LinkedAlternateVersions: {0}".format(linked_alt))
-                except (TypeError, ValueError, UnicodeDecodeError):
-                    pass
+                except Exception as exc:
+                    print("  Data JSON note: {0}".format(exc))
             print()
 
         print("=== LinkedChildren from Medalist owner ===")
@@ -245,7 +286,10 @@ def main():
         else:
             for row in owner_links:
                 child_type = row["ChildType"]
-                label = {2: "LocalAlternateVersion", 3: "LinkedAlternateVersion"}.get(child_type, "Other")
+                label = {
+                    2: "LocalAlternateVersion",
+                    3: "LinkedAlternateVersion",
+                }.get(child_type, "Other")
                 print(
                     "ChildType={0} ({1})  ChildId={2}".format(
                         child_type, label, display_guid(row["ChildId"])
@@ -255,26 +299,30 @@ def main():
         local_links = [row for row in owner_links if row["ChildType"] == 2]
         linked_links = [row for row in owner_links if row["ChildType"] == 3]
         owned_children = [
-            row for expected, row in by_expected.items()
-            if expected != OWNER_ID and matches(pick(row, base_cols, "OwnerId"), OWNER_ID)
+            row
+            for expected, row in by_expected.items()
+            if expected != OWNER_ID
+            and matches(pick(row, base_cols, "OwnerId"), OWNER_ID)
         ]
         primary_children = [
-            row for expected, row in by_expected.items()
-            if expected != OWNER_ID and matches(pick(row, base_cols, "PrimaryVersionId"), OWNER_ID)
+            row
+            for expected, row in by_expected.items()
+            if expected != OWNER_ID
+            and matches(pick(row, base_cols, "PrimaryVersionId"), OWNER_ID)
         ]
 
         print()
         print("=== Summary ===")
-        print("Medalist items found:              {0} / 8".format(len(by_expected)))
-        print("Owner LocalAlternateVersion links: {0}".format(len(local_links)))
-        print("Owner LinkedAlternateVersion links:{0}".format(len(linked_links)))
-        print("Children with OwnerId=owner:       {0} / 7".format(len(owned_children)))
-        print("Children with PrimaryVersionId:    {0} / 7".format(len(primary_children)))
+        print("Medalist items found:               {0} / 8".format(len(by_expected)))
+        print("Owner LocalAlternateVersion links:  {0}".format(len(local_links)))
+        print("Owner LinkedAlternateVersion links: {0}".format(len(linked_links)))
+        print("Children with OwnerId=owner:        {0} / 7".format(len(owned_children)))
+        print("Children with PrimaryVersionId:     {0} / 7".format(len(primary_children)))
         print()
         print("READ ONLY: no database or Jellyfin data was changed.")
 
     finally:
-        con.close()
+        connection.close()
 
     return 0
 
