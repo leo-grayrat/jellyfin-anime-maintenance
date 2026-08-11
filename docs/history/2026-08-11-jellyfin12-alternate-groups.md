@@ -153,4 +153,67 @@ Owner media-source count: 8
 
 8 个成员的 CurrentKey 均已经等于 ExpectedKey，且组内没有未知 source，也没有同一 S/E 的合法多版本。因此该组适合作为第一次真正的 alternate unlink 实验。
 
-下一步仅对这个组执行 `-Apply`，验证 `DELETE /Videos/{ownerId}/AlternateSources` 是否会让 S02E02～S02E09 全部恢复 normal visibility。此 pilot 故意不自动 Series FullRefresh，以便一次只验证“清除 alternate relationship”这一变量。
+## Medalist DELETE pilot：API 成功但结构完全不变
+
+Apply 结果存档：
+
+```text
+experiments/jellyfin12-nfo-refresh/results/11-medalist-alternate-split-api-noop.txt
+```
+
+实际调用：
+
+```text
+DELETE /Videos/af564551c864a8892b28736b0de926de/AlternateSources
+```
+
+接口成功返回，但整个轮询周期始终只有 `1 / 8` normally visible；S02E02 的 `MediaSourceCount` 仍为 8，S02E03-S02E09 仍全部隐藏。pilot 按设计没有继续 metadata refresh。
+
+因此已经证实：**该 endpoint 对这类自动识别出来的 Episode local alternate group 不足以完成拆组。重复调用没有意义。**
+
+### 源码层原因
+
+Jellyfin 12 同时维护至少两类 alternate 关系：
+
+- `LinkedAlternateVersion`；
+- `LocalAlternateVersion`。
+
+`DELETE /Videos/{id}/AlternateSources` 的实现只遍历 `GetLinkedAlternateVersions(item)`，清除其 `PrimaryVersionId` / `LinkedAlternateVersions`；它没有清除 `LocalAlternateVersion` 链接，也没有清除 `OwnerId`。
+
+而 `Video.MediaSourceCount` 同时计算：
+
+```text
+linked versions + local versions + 1
+```
+
+本次 DELETE 后 `MediaSourceCount` 仍为 8，与 local alternate 关系仍完整存在完全一致。
+
+更关键的是，Jellyfin 在创建 local alternate item 时会同时：
+
+```text
+altVideo.OwnerId = primary.Id
+altVideo.SetPrimaryVersionId(primary.Id)
+```
+
+普通 Items 查询在 `IncludeOwnedItems=false` 时会过滤掉：
+
+- `PrimaryVersionId != null` 的 alternate item；
+- `OwnerId != null` 且不是 legitimate Extra 的 owned item。
+
+所以即使某一层 PrimaryVersion 关系被清掉，只要 stale OwnerId/local relationship 仍在，这些 Episode 仍可能保持隐藏。
+
+### 可能的 Jellyfin 12 migration 覆盖缺口
+
+Jellyfin 12 本身有 `FixIncorrectOwnerIdRelationships` migration，注释明确说明它用于清理由 auto-merge 错误产生的 video/movie `OwnerId` parent-child 关系。但它筛选的类型只有普通 `Video` 和 `Movie`，没有 `TV.Episode`。
+
+这与当前现象高度吻合：这些受影响对象全部是 Episode，可能在升级时获得/保留了 local alternate / OwnerId 关系，却没有被该 migration 的 OwnerId cleanup 覆盖。
+
+这个 migration omission 目前仍属于源码与实测共同支持的强推断，下一步先直接读取本机 Jellyfin v12 SQLite 数据库确认 Medalist 8 个 item 的 `OwnerId`、`PrimaryVersionId` 以及 `LinkedChildren.ChildType`，再决定修复方式。
+
+只读诊断脚本：
+
+```text
+experiments/jellyfin12-nfo-refresh/10-medalist-local-alternate-db-diagnosis.py
+```
+
+它使用 SQLite `mode=ro` 打开数据库，只输出关系，不修改数据库。
