@@ -21,8 +21,7 @@ $Headers = @{
 
 function Invoke-JellyfinGet {
     param([Parameter(Mandatory=$true)][string]$Uri)
-    $response = Invoke-RestMethod -Method Get -Uri $Uri -Headers $Headers
-    return $response
+    return Invoke-RestMethod -Method Get -Uri $Uri -Headers $Headers
 }
 
 function Invoke-JellyfinFullRefresh {
@@ -49,6 +48,14 @@ function Get-AllItemsByType {
     $limit = 500
     $allItems = @()
 
+    # Jellyfin groups files that were previously parsed as the same episode.
+    # Supplying VideoTypes for Episode queries makes Jellyfin include owned /
+    # alternate linked video items as well, so every physical path can be found.
+    $extraQuery = ""
+    if ($ItemType -eq "Episode") {
+        $extraQuery = "&VideoTypes=VideoFile"
+    }
+
     do {
         $uri = "$Server/Items" +
                "?Recursive=true" +
@@ -57,7 +64,8 @@ function Get-AllItemsByType {
                "&IncludeItemTypes=$ItemType" +
                "&Fields=Path,ParentId" +
                "&EnableImages=false" +
-               "&EnableUserData=false"
+               "&EnableUserData=false" +
+               $extraQuery
 
         $response = Invoke-JellyfinGet -Uri $uri
         $items = @($response.Items)
@@ -85,13 +93,17 @@ function New-SeasonMap {
 
     $map = @{}
     foreach ($season in $Seasons) {
-        if ($null -eq $season.IndexNumber) { continue }
+        if ($null -eq $season.IndexNumber) {
+            continue
+        }
 
         $ownerId = [string]$season.SeriesId
         if ([string]::IsNullOrWhiteSpace($ownerId)) {
             $ownerId = [string]$season.ParentId
         }
-        if ([string]::IsNullOrWhiteSpace($ownerId)) { continue }
+        if ([string]::IsNullOrWhiteSpace($ownerId)) {
+            continue
+        }
 
         $key = $ownerId + "|" + [string]([int]$season.IndexNumber)
         $map[$key] = $season
@@ -102,17 +114,20 @@ function New-SeasonMap {
 function Test-TargetNumbers {
     param($Item, [int]$Season, [int]$Episode)
 
-    if ($null -eq $Item) { return $false }
-    if ($null -eq $Item.ParentIndexNumber) { return $false }
-    if ($null -eq $Item.IndexNumber) { return $false }
+    if ($null -eq $Item) {
+        return $false
+    }
+    if ($null -eq $Item.ParentIndexNumber -or $null -eq $Item.IndexNumber) {
+        return $false
+    }
 
-    return ([int]$Item.ParentIndexNumber -eq $Season -and [int]$Item.IndexNumber -eq $Episode)
+    return ([int]$Item.ParentIndexNumber -eq $Season -and
+            [int]$Item.IndexNumber -eq $Episode)
 }
 
 if (-not (Test-Path -LiteralPath $RunLogPath -PathType Leaf)) {
     throw "Run log not found: $RunLogPath"
 }
-
 if ($PollIntervalSeconds -lt 1) {
     throw "PollIntervalSeconds must be at least 1."
 }
@@ -166,6 +181,7 @@ $targets = New-Object System.Collections.Generic.List[object]
 foreach ($group in ($rawTargets | Group-Object -Property VideoPath)) {
     $seasonValues = @($group.Group | ForEach-Object { [int]$_.Season } | Select-Object -Unique)
     $episodeValues = @($group.Group | ForEach-Object { [int]$_.Episode } | Select-Object -Unique)
+
     if ($seasonValues.Count -ne 1 -or $episodeValues.Count -ne 1) {
         throw "Conflicting targets for video path: $($group.Name)"
     }
@@ -182,12 +198,15 @@ foreach ($group in ($rawTargets | Group-Object -Property VideoPath)) {
 }
 
 Write-Host "Targets from run log: $($targets.Count)"
-Write-Host "Reading current Jellyfin episodes..."
+Write-Host "Reading current Jellyfin episodes (including alternate versions)..."
 
 $episodes = @(Get-AllItemsByType -ItemType "Episode")
 $episodeByPath = New-PathMap -Items $episodes
 
+Write-Host "Episode items returned by Jellyfin: $($episodes.Count)"
+
 $states = New-Object System.Collections.Generic.List[object]
+
 foreach ($target in $targets) {
     $item = $null
     if ($episodeByPath.ContainsKey($target.VideoPath)) {
@@ -240,7 +259,7 @@ foreach ($target in $targets) {
         $state.Message = "NFO sidecar does not exist"
     } elseif (-not $itemFound) {
         $state.Result = "ITEM_NOT_FOUND"
-        $state.Message = "Video path was not found in Jellyfin"
+        $state.Message = "Video path was not found in Jellyfin, including alternate versions"
     } elseif (Test-TargetNumbers -Item $item -Season $target.TargetSeason -Episode $target.TargetEpisode) {
         $state.EpisodeRefresh = "NOT_NEEDED"
     } else {
@@ -275,6 +294,7 @@ if (-not $Apply) {
     }
 
     $states | Export-Csv -LiteralPath $ResultLogPath -NoTypeInformation -Encoding UTF8
+
     Write-Host "Dry run finished."
     Write-Host "Result log: $ResultLogPath"
     Write-Host "To apply:"
@@ -286,8 +306,10 @@ if (-not $Apply) {
 }
 
 $episodeRefreshStates = @($states | Where-Object { $_.EpisodeRefresh -eq "NEEDED" })
+
 if ($episodeRefreshStates.Count -gt 0) {
     Write-Host "Queueing episode FullRefresh requests..."
+
     $queued = 0
     foreach ($state in $episodeRefreshStates) {
         try {
@@ -304,17 +326,21 @@ if ($episodeRefreshStates.Count -gt 0) {
             Start-Sleep -Milliseconds $QueueDelayMilliseconds
         }
     }
+
     Write-Host "Episode refresh requests queued: $queued"
 
     $deadline = (Get-Date).AddSeconds($EpisodeTimeoutSeconds)
     do {
         Start-Sleep -Seconds $PollIntervalSeconds
+
         $episodes = @(Get-AllItemsByType -ItemType "Episode")
         $episodeByPath = New-PathMap -Items $episodes
-
         $pending = 0
+
         foreach ($state in $states) {
-            if ($state.EpisodeRefresh -ne "QUEUED") { continue }
+            if ($state.EpisodeRefresh -ne "QUEUED") {
+                continue
+            }
 
             if (-not $episodeByPath.ContainsKey($state.VideoPath)) {
                 $pending++
@@ -323,6 +349,7 @@ if ($episodeRefreshStates.Count -gt 0) {
 
             $item = $episodeByPath[$state.VideoPath]
             $state.SeriesId = [string]$item.SeriesId
+
             if (Test-TargetNumbers -Item $item -Season $state.TargetSeason -Episode $state.TargetEpisode) {
                 $state.EpisodeRefresh = "OK"
             } else {
@@ -331,7 +358,9 @@ if ($episodeRefreshStates.Count -gt 0) {
         }
 
         Write-Host "Episode refresh pending: $pending"
-        if ($pending -eq 0) { break }
+        if ($pending -eq 0) {
+            break
+        }
     } while ((Get-Date) -lt $deadline)
 
     foreach ($state in $states) {
@@ -345,9 +374,14 @@ if ($episodeRefreshStates.Count -gt 0) {
 
 $episodes = @(Get-AllItemsByType -ItemType "Episode")
 $episodeByPath = New-PathMap -Items $episodes
+
 foreach ($state in $states) {
-    if (-not $state.ItemFound) { continue }
-    if (-not $episodeByPath.ContainsKey($state.VideoPath)) { continue }
+    if (-not $state.ItemFound) {
+        continue
+    }
+    if (-not $episodeByPath.ContainsKey($state.VideoPath)) {
+        continue
+    }
 
     $item = $episodeByPath[$state.VideoPath]
     $state.SeriesId = [string]$item.SeriesId
@@ -358,19 +392,32 @@ foreach ($state in $states) {
 
 $seriesIdSet = @{}
 foreach ($state in $states) {
-    if (-not $state.NfoExists -or -not $state.ItemFound) { continue }
-    if ($null -eq $state.AfterSeason -or $null -eq $state.AfterEpisode) { continue }
-    if ([int]$state.AfterSeason -ne [int]$state.TargetSeason) { continue }
-    if ([int]$state.AfterEpisode -ne [int]$state.TargetEpisode) { continue }
-    if ([string]::IsNullOrWhiteSpace([string]$state.SeriesId)) { continue }
+    if (-not $state.NfoExists -or -not $state.ItemFound) {
+        continue
+    }
+    if ($null -eq $state.AfterSeason -or $null -eq $state.AfterEpisode) {
+        continue
+    }
+    if ([int]$state.AfterSeason -ne [int]$state.TargetSeason) {
+        continue
+    }
+    if ([int]$state.AfterEpisode -ne [int]$state.TargetEpisode) {
+        continue
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$state.SeriesId)) {
+        continue
+    }
+
     $seriesIdSet[[string]$state.SeriesId] = $true
 }
+
 $seriesIds = @($seriesIdSet.Keys)
 
 Write-Host ""
 Write-Host "Series to refresh: $($seriesIds.Count)"
 
 $seriesRefreshErrors = @{}
+
 foreach ($seriesId in $seriesIds) {
     try {
         Invoke-JellyfinFullRefresh -ItemId $seriesId
@@ -387,6 +434,7 @@ foreach ($seriesId in $seriesIds) {
 
 if ($seriesIds.Count -gt 0) {
     $deadline = (Get-Date).AddSeconds($SeriesTimeoutSeconds)
+
     do {
         Start-Sleep -Seconds $PollIntervalSeconds
 
@@ -394,12 +442,18 @@ if ($seriesIds.Count -gt 0) {
         $episodeByPath = New-PathMap -Items $episodes
         $seasons = @(Get-AllItemsByType -ItemType "Season")
         $seasonMap = New-SeasonMap -Seasons $seasons
-
         $pending = 0
+
         foreach ($state in $states) {
-            if (-not $state.NfoExists -or -not $state.ItemFound) { continue }
-            if ([string]::IsNullOrWhiteSpace([string]$state.SeriesId)) { continue }
-            if ($seriesRefreshErrors.ContainsKey([string]$state.SeriesId)) { continue }
+            if (-not $state.NfoExists -or -not $state.ItemFound) {
+                continue
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$state.SeriesId)) {
+                continue
+            }
+            if ($seriesRefreshErrors.ContainsKey([string]$state.SeriesId)) {
+                continue
+            }
             if (-not $episodeByPath.ContainsKey($state.VideoPath)) {
                 $pending++
                 continue
@@ -430,7 +484,9 @@ if ($seriesIds.Count -gt 0) {
         }
 
         Write-Host "Season relink pending: $pending"
-        if ($pending -eq 0) { break }
+        if ($pending -eq 0) {
+            break
+        }
     } while ((Get-Date) -lt $deadline)
 }
 
@@ -449,9 +505,10 @@ foreach ($state in $states) {
         $state.Message = "NFO sidecar does not exist"
         continue
     }
+
     if (-not $state.ItemFound -or -not $episodeByPath.ContainsKey($state.VideoPath)) {
         $state.Result = "ITEM_NOT_FOUND"
-        $state.Message = "Video path was not found in Jellyfin"
+        $state.Message = "Video path was not found in Jellyfin, including alternate versions"
         continue
     }
 
@@ -475,6 +532,7 @@ foreach ($state in $states) {
     }
 
     $seasonKey = [string]$item.SeriesId + "|" + [string]([int]$state.TargetSeason)
+
     if (-not $seasonMap.ContainsKey($seasonKey)) {
         $state.SeriesRefresh = "FAILED"
         $state.Result = "TARGET_SEASON_NOT_FOUND"
