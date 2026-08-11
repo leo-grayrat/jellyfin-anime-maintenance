@@ -1,0 +1,59 @@
+Experiment: 08-global-alternate-group-audit.ps1
+Date: 2026-08-11
+Status: READ-ONLY AUDIT COMPLETED; STALE CROSS-EPISODE ALTERNATE GROUPS ARE WIDESPREAD
+Privacy: local media paths omitted.
+
+Summary:
+- Targets from NFO run log: 243
+- Targets normally visible: 156
+- Targets hidden but expanded-visible: 87
+- Targets missing even expanded: 0
+- Alternate groups touching targets: 21
+- Definitely wrong groups: 20
+- Legit same-episode groups: 0
+- Mixed/unknown groups needing review: 1
+- Hidden targets without visible owner: 0
+
+Important interpretation:
+- The problem is not limited to Fate/strange Fake.
+- 177/243 correction targets belong to an alternate group touching the correction set.
+- 176 correction targets belong to the 20 definitely-wrong groups; one more target belongs to the mixed/unknown group.
+- Many hidden members already have the correct current season/episode numbers, but Jellyfin still keeps stale alternate-version links created when those files were previously parsed as the same episode.
+- Therefore the earlier batch result "230 OK / 13 Not OK" only proves per-item season/episode/SeasonId correctness. It does not prove that Jellyfin's visible Episode <-> alternate-version grouping is correct.
+
+Definitely-wrong groups:
+
+Owner ItemId                         Series                                      Owner current  Sources  Target members
+3839de330ca735482463fb32e64515fb     命运／奇异赝品                                S00E01         14       14
+7cb56552bc80cb6dff435203ae918c21     淡岛百景                                     S01E01         12       12
+4b939824080181b4c4565fdfc827e336     藤本树 17-26                                S01E01          8        8
+ce4dee05e247a7bd3a1ed217bac231fb     靠死亡游戏混饭吃。                             S01E01          3        2
+f129cf3c69b341ecdd460c14d308a769     描绘直至生命尽头                              S01E01          4        4
+310f64f58ee16ae3d1f335322b38aace     判处勇者刑：惩罚勇者9004队刑务记录                 S01E01         12       12
+313055bf1b5da035ff1c9f2a0a1b0452     魔法姐妹露露和莉莉                            S01E01         12       12
+e3331ca3bb4de957c328408ff81935c9     异国日记                                     S01E01         13       13
+0e001446de8a5807b04c9c58e99c2f15     攻壳机动队                                   S01E01          7        7
+6941d2db357679a18d7f03e6e267f328     世界在起舞                                   S01E01          4        4
+c9254806def80a4bd65376f694cd0b04     想结束这场“我爱你”的游戏                        S01E01         10       10
+39adc00c7dd18b45908a0fdbaef9c146     克雷瓦提斯-魔兽之王与婴儿与尸之勇者-               S01E01         12       12
+58b902a0f56b2aa3889072e2bc8344fb     午夜的倾心旋律                                S01E03         12       12
+bba0c0704384472a2d673a0ce7ef7c18     上伊那牡丹，醉姿如百合                          S01E12         12       12
+118be0c5b867a5cc82cf7f21e411fca9     幼女战记（2017 Series）                       S01E12         25       12
+61a45237e7d9c0867bbff828d6fdf3d5     葬送的芙莉莲 第二季 - group 1                  S02E01          7        7
+5745b2522090e7c841fc4e4e1cc175bb     幼女战记Ⅱ                                    S02E01          5        5
+af564551c864a8892b28736b0de926de     金牌得主 第2期                                 S02E02          8        8
+80382c3b2ffc41c20bf76c4ea29435e4     葬送的芙莉莲 第二季 - group 2                  S02E08          3        3
+4eccd0fc7d467f2d691d88d0822b8d3c     SPY×FAMILY Season 3                         S03E07          7        7
+
+Mixed/unknown group:
+- Owner bb658ddf08a976ecf85971f05b3c64a1, 名侦探光之美少女！, owner S01E11, two sources.
+- One source is the S01E11 correction target; the other is outside the correction run log and currently reports S2026E01.
+- This group is not safe for blind automated repair until the unknown member is understood.
+
+Notable edge cases before any global split:
+- 攻壳机动队 group contains duplicate target keys: two S01E01, two S01E02, two S01E03, and one S01E04. A correct repair may need to re-create legitimate same-episode alternate groups after removing the stale cross-episode group.
+- 幼女战记（2017） group contains 25 sources but only 12 are correction targets. The 13 non-target members require separate understanding before a fully automatic global repair.
+- 靠死亡游戏混饭吃。 group contains an additional non-target source currently reporting S01E10.
+
+Next debugging step:
+Use one small, fully-known, all-distinct group as a destructive pilot for Jellyfin's official DELETE /Videos/{itemId}/AlternateSources API. Verify that unlinking makes every member normally visible without changing media/NFO files. Only after that succeeds should the repair be generalized to all definitely-wrong groups, with special handling for duplicate expected keys and unknown members.
