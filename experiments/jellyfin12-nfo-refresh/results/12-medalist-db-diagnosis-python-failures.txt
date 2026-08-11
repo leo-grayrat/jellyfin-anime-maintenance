@@ -1,0 +1,41 @@
+# Medalist DB diagnosis: Python-side failures
+
+Date: 2026-08-11
+
+These failures occurred while trying to run
+`10-medalist-local-alternate-db-diagnosis.py`. No Jellyfin database write was
+performed by these attempts.
+
+## Attempt 1
+
+PowerShell reported Python pointing at line 81 of the script. The full Python
+exception text was not captured in the conversation, so the exact root cause
+is NOT considered proven. The script was subsequently rewritten to remove
+modern type-annotation syntax, but that edit should not be treated as proof
+that Python 3.13.5 was incompatible with the original syntax.
+
+## Attempt 2
+
+Reported error:
+
+    ERROR: the JSON object must be str, not 'bytes'
+
+The HTTP JSON handling was changed to explicitly decode response bytes before
+`json.loads`. The user's Python was later confirmed as Python 3.13.5, so the
+earlier explanation that this was caused by an old Python version was wrong.
+
+## Attempt 3
+
+Reported error:
+
+    ERROR: malformed database schema (IX_Peoples_NameLower) - near "(": syntax error
+
+This is not a Python-language syntax error. Jellyfin 12 RC5 creates the index as
+an SQLite expression index:
+
+    CREATE INDEX IF NOT EXISTS "IX_Peoples_NameLower"
+    ON "Peoples" (lower("Name"));
+
+The next diagnostic step is `11-python-sqlite-runtime-diagnosis.py`, which does
+not open jellyfin.db. It prints the SQLite runtime actually loaded by Python and
+tries the same expression-index syntax against an in-memory database.
