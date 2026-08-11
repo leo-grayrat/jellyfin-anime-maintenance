@@ -124,19 +124,13 @@ foreach ($item in $expandedEpisodes) {
 }
 
 $targetByPath = @{}
-$targetById = @{}
 
 foreach ($row in $fateRows) {
     $target = "S{0:D2}E{1:D2}" -f [int]$row.TargetSeason, [int]$row.TargetEpisode
     $pathKey = Get-PathKey -Path ([string]$row.VideoPath)
-    $itemId = [string]$row.ItemId
 
     if (-not [string]::IsNullOrWhiteSpace($pathKey)) {
         $targetByPath[$pathKey] = $target
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($itemId)) {
-        $targetById[$itemId] = $target
     }
 }
 
@@ -197,8 +191,12 @@ foreach ($row in $fateRows) {
 
     $foundNormally = $false
     $foundExpanded = $null -ne $item
+    $resolvedItemId = $itemId
+    $targetMediaSourceCount = $null
 
     if ($foundExpanded) {
+        $resolvedItemId = [string]$item.Id
+        $targetMediaSourceCount = $item.MediaSourceCount
         $foundNormally = $normalById.ContainsKey([string]$item.Id)
     }
 
@@ -209,10 +207,10 @@ foreach ($row in $fateRows) {
 
     $summary += [pscustomobject]@{
         Target                  = $target
-        ItemId                  = if ($foundExpanded) { [string]$item.Id } else { $itemId }
+        ItemId                  = $resolvedItemId
         FoundNormally           = $foundNormally
         FoundExpanded           = $foundExpanded
-        TargetMediaSourceCount  = if ($foundExpanded) { $item.MediaSourceCount } else { $null }
+        TargetMediaSourceCount  = $targetMediaSourceCount
         OwnerCandidates         = $ownerCandidates.Count
     }
 }
