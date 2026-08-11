@@ -1,0 +1,48 @@
+Experiment: 06-fate-alternate-group-diagnosis.ps1
+Date: 2026-08-11
+Status: READ-ONLY DIAGNOSIS COMPLETED; SINGLE 14-SOURCE ALTERNATE GROUP CONFIRMED
+Privacy: local media paths omitted.
+
+Targets: 14
+Normally visible episodes: 573
+Expanded episodes: 676
+
+Target summary:
+- S00E01 3839de330ca735482463fb32e64515fb: normally visible, MediaSourceCount=14, owner candidates=1
+- S01E01 ac5f3d17a012292c55c1611a81ac24ac: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E02 e395bb5611548fc23c76bd86ba14e6e1: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E03 3b2a5ea73bee275424f2e019329f3cc3: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E04 acefea2cd82df4480da6c4d9b8741e87: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E05 4b292deb834debeecec97b93068290e2: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E06 423e578e4c3f6b0d43d113e59d9c4b0b: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E07 f2a4a75331e2020a5db5626e3a72de99: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E08 23f0f81c21e32572b72fee40f72df0a2: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E09 f0f8a91dffc777e82459c05d56cfdeae: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E10 386ef022bdca9f07c58579a84d943edc: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E11 3edbdc23e36ed8c0fece6e0e34def40f: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E12 acd8efb2dff537e327278cb2227a66e5: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+- S01E13 cde891229aeb3ca931410225c8e47a13: hidden, expanded-visible, MediaSourceCount=14, owner candidates=1
+
+Distinct normally-visible owner groups: 1
+Owner ItemId: 3839de330ca735482463fb32e64515fb
+Owner target: S00E01
+Owner SeriesId: 5593b2b4c108e8a7816754533aae41ef
+Owner SeasonId: 96a97e109f6e1aa179ac6f73729e495b
+Owner MediaSourceCount: 14
+
+The owner exposes all 14 Fate files as MediaSources. The same 14 source IDs are returned from each hidden target item, with the queried item listed first. Therefore S00E01 and S01E01-S01E13 are not 14 independent visible episode records from Jellyfin's normal view; they are one 14-source alternate-version group whose normally visible primary is S00E01.
+
+Summary from the script:
+Targets:                         14
+Hidden alternate/owned targets: 13
+Hidden targets with owner:      13
+Hidden targets without owner:   0
+Distinct visible owner items:   1
+
+Conclusion supported by this run:
+- The remaining Fate failure is no longer an ambiguous owned-item case.
+- All 14 physical videos are grouped into one alternate-version set.
+- S00E01 is the only normally visible owner/primary item.
+- S01E01-S01E13 are hidden members of that same group.
+- This grouping prevents Series-level season reconstruction from seeing the 13 S01 episodes.
+- The next minimal repair experiment is to split this single alternate group, verify all 14 items become normally/Series visible, and only then refresh the Fate Series to create/relink Season 1.
