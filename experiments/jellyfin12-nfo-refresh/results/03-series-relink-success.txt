@@ -1,0 +1,49 @@
+Experiment: 03-series-relink.ps1
+Date: 2026-08-11
+Status: SUCCESS
+Privacy: local media path replaced with <MEDIA_ROOT>.
+
+=== Current Episode State ===
+
+Name              : 对秘密警察伪装作战
+Path              : <MEDIA_ROOT>\SPY×FAMILY Season 3 (2025)\[Sakurato] Spy x Family (2025) [07]....mp4
+IndexNumber       : 7
+ParentIndexNumber : 3
+SeasonName        : 第 1 季
+SeasonId          : 13c0f408fbfad2afc82b81a145541d5b
+SeriesName        : 间谍过家家
+SeriesId          : 2352f89ff3f68c12de46b149cd8488b0
+
+Series:
+间谍过家家
+SeriesId: 2352f89ff3f68c12de46b149cd8488b0
+
+Looking for Season 3...
+Season 3 found.
+Season 3 name: 第 3 季
+Season 3 ID:   b044401aabe3b12687c369f110275e9c
+
+=== Refreshing Series ===
+
+Series refresh request accepted.
+Waiting for season reconciliation...
+Check 1/30 : ParentSeason=3, SeasonName=第 3 季, SeasonId=b044401aabe3b12687c369f110275e9c
+
+=== Final Episode State ===
+
+Name              : 对秘密警察伪装作战
+Path              : <MEDIA_ROOT>\SPY×FAMILY Season 3 (2025)\[Sakurato] Spy x Family (2025) [07]....mp4
+IndexNumber       : 7
+ParentIndexNumber : 3
+SeasonName        : 第 3 季
+SeasonId          : b044401aabe3b12687c369f110275e9c
+SeriesName        : 间谍过家家
+SeriesId          : 2352f89ff3f68c12de46b149cd8488b0
+
+=== Result ===
+SUCCESS.
+Episode is now fully linked to Season 3.
+
+Interpretation:
+- Episode FullRefresh fixes ParentIndexNumber from NFO.
+- Series FullRefresh then reconciles SeasonId / SeasonName when the target Season already exists.
