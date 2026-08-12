@@ -1,0 +1,27 @@
+=== Hardlink Path Probe ===
+Date: 2026-08-12
+Environment: Windows PowerShell 5.1.26100.8875
+Result: POWERSHELL PROVIDER PATH HANDLING
+
+Observed:
+- A source file whose literal filename contains `[02]` exists when checked with `Test-Path -LiteralPath`.
+- The same path returns false when checked with ordinary `Test-Path -Path`, because `[` and `]` are interpreted as wildcard syntax.
+- `New-Item -ItemType HardLink -Path <link> -Target <source[02].tmp>` fails with "path not found".
+- Native Windows `CreateHardLinkW` succeeds against the exact same source path.
+
+Key output:
+
+Source exists (LiteralPath): True
+Source exists (Path):        False
+
+NEW-ITEM RESULT: FAILED
+NATIVE RESULT: SUCCEEDED
+CLASSIFICATION: POWERSHELL PROVIDER PATH HANDLING
+
+Conclusion:
+The failed cross-series hardlink pilot did not fail because the staging file was missing or because NTFS hardlinks were unsupported. The failure is in Windows PowerShell 5.1 provider path handling for `New-Item -ItemType HardLink` when the target filename contains square brackets, which are common in fansub filenames.
+
+Follow-up:
+Keep experiment 14 as the failed PowerShell-provider attempt. Use native `CreateHardLinkW` for the corrected retry and for any later canonical-view generator.
+
+No media files or Jellyfin data were touched by this probe.
