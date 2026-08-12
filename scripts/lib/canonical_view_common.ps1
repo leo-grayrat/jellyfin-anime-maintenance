@@ -263,6 +263,381 @@ function Get-CvManifestIndex {
     return $index
 }
 
+function Merge-CvManifestRows {
+    param(
+        [object[]]$ExistingRows = @(),
+        [object[]]$NewRows = @()
+    )
+
+    $byCanonicalVideo = @{}
+
+    foreach ($row in @($ExistingRows)) {
+        $canonicalVideo = [string]$row.CanonicalVideo
+        if ([string]::IsNullOrWhiteSpace($canonicalVideo)) {
+            throw "Existing manifest row is missing CanonicalVideo."
+        }
+        $key = Get-CvPathKey -Path $canonicalVideo
+        if ($byCanonicalVideo.ContainsKey($key)) {
+            throw "Duplicate CanonicalVideo in existing manifest: $canonicalVideo"
+        }
+        $byCanonicalVideo[$key] = $row
+    }
+
+    foreach ($row in @($NewRows)) {
+        $canonicalVideo = [string]$row.CanonicalVideo
+        if ([string]::IsNullOrWhiteSpace($canonicalVideo)) {
+            throw "New manifest row is missing CanonicalVideo."
+        }
+        $key = Get-CvPathKey -Path $canonicalVideo
+        $byCanonicalVideo[$key] = $row
+    }
+
+    return @($byCanonicalVideo.Values | Sort-Object CanonicalVideo)
+}
+
+function Get-CvRollbackPaths {
+    param([object[]]$BuildRows = @())
+
+    $paths = New-Object System.Collections.ArrayList
+    $seen = @{}
+
+    foreach ($row in @($BuildRows)) {
+        if ([string]$row.NfoResult -eq "CREATED" -and -not [string]::IsNullOrWhiteSpace([string]$row.CanonicalNfo)) {
+            $key = Get-CvPathKey -Path ([string]$row.CanonicalNfo)
+            if (-not $seen.ContainsKey($key)) {
+                [void]$paths.Add([string]$row.CanonicalNfo)
+                $seen[$key] = $true
+            }
+        }
+
+        if ([string]$row.VideoResult -eq "CREATED" -and -not [string]::IsNullOrWhiteSpace([string]$row.CanonicalVideo)) {
+            $key = Get-CvPathKey -Path ([string]$row.CanonicalVideo)
+            if (-not $seen.ContainsKey($key)) {
+                [void]$paths.Add([string]$row.CanonicalVideo)
+                $seen[$key] = $true
+            }
+        }
+    }
+
+    return @($paths)
+}
+
+function Initialize-CvNativeHardLink {
+    if ("CvNativeFileSystem" -as [type]) { return }
+
+    Add-Type -TypeDefinition @"
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+public static class CvNativeFileSystem
+{
+    private const uint INVALID_FILE_ATTRIBUTES = 0xFFFFFFFF;
+    private const uint FILE_ATTRIBUTE_DIRECTORY = 0x10;
+    private const uint FILE_ATTRIBUTE_NORMAL = 0x80;
+    private const uint FILE_SHARE_READ = 0x1;
+    private const uint FILE_SHARE_WRITE = 0x2;
+    private const uint FILE_SHARE_DELETE = 0x4;
+    private const uint OPEN_EXISTING = 3;
+    private const uint MOVEFILE_REPLACE_EXISTING = 0x1;
+    private const uint MOVEFILE_WRITE_THROUGH = 0x8;
+    private const int ERROR_FILE_NOT_FOUND = 2;
+    private const int ERROR_PATH_NOT_FOUND = 3;
+    private const int ERROR_ALREADY_EXISTS = 183;
+    private const int ERROR_DIR_NOT_EMPTY = 145;
+
+    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CreateHardLinkW(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+
+    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFileAttributesW(string lpFileName);
+
+    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CreateDirectoryW(string lpPathName, IntPtr lpSecurityAttributes);
+
+    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CopyFileW(string lpExistingFileName, string lpNewFileName, bool bFailIfExists);
+
+    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool DeleteFileW(string lpFileName);
+
+    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool RemoveDirectoryW(string lpPathName);
+
+    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool MoveFileExW(string lpExistingFileName, string lpNewFileName, uint dwFlags);
+
+    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateFileW(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile);
+
+    [DllImport("Kernel32.dll", SetLastError = true)]
+    private static extern bool GetFileSizeEx(IntPtr hFile, out long lpFileSize);
+
+    [DllImport("Kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    private static string ToExtendedPath(string path)
+    {
+        if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+        {
+            return path;
+        }
+        if (path.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return @"\\?\UNC\" + path.Substring(2);
+        }
+        return @"\\?\" + path;
+    }
+
+    public static bool FileExists(string path)
+    {
+        uint attributes = GetFileAttributesW(ToExtendedPath(path));
+        return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+    }
+
+    public static bool DirectoryExists(string path)
+    {
+        uint attributes = GetFileAttributesW(ToExtendedPath(path));
+        return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    }
+
+    public static long GetLength(string path)
+    {
+        IntPtr handle = CreateFileW(
+            ToExtendedPath(path),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            IntPtr.Zero,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            IntPtr.Zero);
+
+        if (handle == new IntPtr(-1))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        try
+        {
+            long length;
+            if (!GetFileSizeEx(handle, out length))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            return length;
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
+    }
+
+    public static void CreateHardLink(string newPath, string existingPath)
+    {
+        if (!CreateHardLinkW(ToExtendedPath(newPath), ToExtendedPath(existingPath), IntPtr.Zero))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
+
+    public static void CreateDirectoryOne(string path)
+    {
+        if (DirectoryExists(path))
+        {
+            return;
+        }
+
+        if (!CreateDirectoryW(ToExtendedPath(path), IntPtr.Zero))
+        {
+            int error = Marshal.GetLastWin32Error();
+            if (error != ERROR_ALREADY_EXISTS)
+            {
+                throw new Win32Exception(error);
+            }
+        }
+    }
+
+    public static void CopyFile(string source, string destination, bool overwrite)
+    {
+        if (!CopyFileW(ToExtendedPath(source), ToExtendedPath(destination), !overwrite))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
+
+    public static void DeleteFileIfExists(string path)
+    {
+        if (!FileExists(path))
+        {
+            return;
+        }
+
+        if (!DeleteFileW(ToExtendedPath(path)))
+        {
+            int error = Marshal.GetLastWin32Error();
+            if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+            {
+                throw new Win32Exception(error);
+            }
+        }
+    }
+
+    public static bool RemoveDirectoryIfEmpty(string path)
+    {
+        if (!DirectoryExists(path))
+        {
+            return true;
+        }
+
+        if (RemoveDirectoryW(ToExtendedPath(path)))
+        {
+            return true;
+        }
+
+        int error = Marshal.GetLastWin32Error();
+        if (error == ERROR_DIR_NOT_EMPTY)
+        {
+            return false;
+        }
+        if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+        {
+            return true;
+        }
+        throw new Win32Exception(error);
+    }
+
+    public static void MoveReplace(string source, string destination)
+    {
+        uint flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH;
+        if (!MoveFileExW(ToExtendedPath(source), ToExtendedPath(destination), flags))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
+}
+"@
+}
+
+function Test-CvNativeFile {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-CvNativeHardLink
+    return [CvNativeFileSystem]::FileExists([System.IO.Path]::GetFullPath($Path))
+}
+
+function Test-CvNativeDirectory {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-CvNativeHardLink
+    return [CvNativeFileSystem]::DirectoryExists([System.IO.Path]::GetFullPath($Path))
+}
+
+function Get-CvNativeFileLength {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-CvNativeHardLink
+    return [long][CvNativeFileSystem]::GetLength([System.IO.Path]::GetFullPath($Path))
+}
+
+function New-CvNativeDirectory {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    Initialize-CvNativeHardLink
+    [CvNativeFileSystem]::CreateDirectoryOne($fullPath)
+}
+
+function New-CvNativeDirectoryTree {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = ([System.IO.Path]::GetFullPath($Path)).TrimEnd([char[]]@('\', '/'))
+    $root = Get-CvVolumeRoot -Path $fullPath
+
+    if (-not $fullPath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Directory path is outside its parsed volume root: $fullPath"
+    }
+
+    $relative = $fullPath.Substring($root.Length).TrimStart([char[]]@('\', '/'))
+    if ([string]::IsNullOrWhiteSpace($relative)) {
+        return @()
+    }
+
+    $current = $root.TrimEnd([char[]]@('\', '/'))
+    $created = New-Object System.Collections.ArrayList
+
+    foreach ($segment in @($relative -split '[\\/]')) {
+        if ([string]::IsNullOrWhiteSpace($segment)) { continue }
+        if ($current.EndsWith(':')) {
+            $current += '\' + $segment
+        }
+        else {
+            $current += '\' + $segment
+        }
+
+        if (-not (Test-CvNativeDirectory -Path $current)) {
+            New-CvNativeDirectory -Path $current
+            [void]$created.Add($current)
+        }
+    }
+
+    return @($created)
+}
+
+function Copy-CvNativeFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [switch]$Overwrite
+    )
+
+    $sourceFull = [System.IO.Path]::GetFullPath($Source)
+    $destinationFull = [System.IO.Path]::GetFullPath($Destination)
+
+    if (-not (Test-CvNativeFile -Path $sourceFull)) {
+        throw "Copy source does not exist: $sourceFull"
+    }
+
+    Initialize-CvNativeHardLink
+    [CvNativeFileSystem]::CopyFile($sourceFull, $destinationFull, [bool]$Overwrite)
+
+    if (-not (Test-CvNativeFile -Path $destinationFull)) {
+        throw "Native copy returned success but destination is not visible: $destinationFull"
+    }
+}
+
+function Remove-CvNativeFile {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-CvNativeHardLink
+    [CvNativeFileSystem]::DeleteFileIfExists([System.IO.Path]::GetFullPath($Path))
+}
+
+function Remove-CvNativeDirectoryIfEmpty {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-CvNativeHardLink
+    return [bool][CvNativeFileSystem]::RemoveDirectoryIfEmpty([System.IO.Path]::GetFullPath($Path))
+}
+
+function Move-CvNativeFileReplace {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    Initialize-CvNativeHardLink
+    [CvNativeFileSystem]::MoveReplace(
+        [System.IO.Path]::GetFullPath($Source),
+        [System.IO.Path]::GetFullPath($Destination))
+}
+
 function Test-CvExistingTarget {
     param(
         [Parameter(Mandatory = $true)][string]$TargetPath,
@@ -272,7 +647,7 @@ function Test-CvExistingTarget {
         [long]$ExpectedLength = -1
     )
 
-    if (-not (Test-Path -LiteralPath $TargetPath -PathType Leaf)) {
+    if (-not (Test-CvNativeFile -Path $TargetPath)) {
         return [pscustomobject]@{ State = "MISSING"; Reason = "target does not exist" }
     }
 
@@ -292,53 +667,13 @@ function Test-CvExistingTarget {
     }
 
     if ($ExpectedLength -ge 0) {
-        $actualLength = (Get-Item -LiteralPath $TargetPath).Length
+        $actualLength = Get-CvNativeFileLength -Path $TargetPath
         if ([long]$actualLength -ne $ExpectedLength) {
             return [pscustomobject]@{ State = "CONFLICT"; Reason = "target length does not match source length" }
         }
     }
 
     return [pscustomobject]@{ State = "REUSABLE"; Reason = "manifest-managed same source" }
-}
-
-function Initialize-CvNativeHardLink {
-    if ("CvNativeHardLink" -as [type]) { return }
-
-    Add-Type -TypeDefinition @"
-using System;
-using System.ComponentModel;
-using System.Runtime.InteropServices;
-
-public static class CvNativeHardLink
-{
-    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool CreateHardLinkW(
-        string lpFileName,
-        string lpExistingFileName,
-        IntPtr lpSecurityAttributes);
-
-    private static string ToExtendedPath(string path)
-    {
-        if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
-        {
-            return path;
-        }
-        if (path.StartsWith(@"\\", StringComparison.Ordinal))
-        {
-            return @"\\?\UNC\" + path.Substring(2);
-        }
-        return @"\\?\" + path;
-    }
-
-    public static void Create(string newPath, string existingPath)
-    {
-        if (!CreateHardLinkW(ToExtendedPath(newPath), ToExtendedPath(existingPath), IntPtr.Zero))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-    }
-}
-"@
 }
 
 function New-CvNativeHardLink {
@@ -350,15 +685,21 @@ function New-CvNativeHardLink {
     $newPath = [System.IO.Path]::GetFullPath($Path)
     $existingPath = [System.IO.Path]::GetFullPath($Target)
 
-    if (-not (Test-Path -LiteralPath $existingPath -PathType Leaf)) {
+    if (-not (Test-CvNativeFile -Path $existingPath)) {
         throw "Hardlink source does not exist: $existingPath"
     }
-    if (Test-Path -LiteralPath $newPath) {
+    if (Test-CvNativeFile -Path $newPath) {
         throw "Hardlink destination already exists: $newPath"
     }
 
-    $parent = [System.IO.Path]::GetDirectoryName($newPath)
-    if ([string]::IsNullOrWhiteSpace($parent) -or -not (Test-Path -LiteralPath $parent -PathType Container)) {
+    $lastBackslash = $newPath.LastIndexOf('\')
+    $lastSlash = $newPath.LastIndexOf('/')
+    $lastSeparator = [Math]::Max($lastBackslash, $lastSlash)
+    if ($lastSeparator -lt 1) {
+        throw "Hardlink destination has no parent directory: $newPath"
+    }
+    $parent = $newPath.Substring(0, $lastSeparator)
+    if (-not (Test-CvNativeDirectory -Path $parent)) {
         throw "Hardlink destination directory does not exist: $parent"
     }
 
@@ -369,17 +710,20 @@ function New-CvNativeHardLink {
     }
 
     Initialize-CvNativeHardLink
-    [CvNativeHardLink]::Create($newPath, $existingPath)
+    [CvNativeFileSystem]::CreateHardLink($newPath, $existingPath)
 
-    if (-not (Test-Path -LiteralPath $newPath -PathType Leaf)) {
+    if (-not (Test-CvNativeFile -Path $newPath)) {
         throw "CreateHardLinkW returned success but destination is not visible: $newPath"
     }
 
-    $sourceLength = (Get-Item -LiteralPath $existingPath).Length
-    $targetLength = (Get-Item -LiteralPath $newPath).Length
+    $sourceLength = Get-CvNativeFileLength -Path $existingPath
+    $targetLength = Get-CvNativeFileLength -Path $newPath
     if ([long]$sourceLength -ne [long]$targetLength) {
         throw "Hardlink length mismatch: source=$sourceLength target=$targetLength"
     }
 
-    return Get-Item -LiteralPath $newPath
+    return [pscustomobject]@{
+        Path   = $newPath
+        Length = $targetLength
+    }
 }
