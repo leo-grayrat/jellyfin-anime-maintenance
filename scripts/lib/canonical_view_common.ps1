@@ -102,39 +102,43 @@ function Get-CvCorrectionTargets {
     return $targets
 }
 
-function Resolve-CvSourceVideo {
-    param(
-        [Parameter(Mandatory = $true)][string]$RecordedVideoPath,
-        [Parameter(Mandatory = $true)][string]$ExpectedKey
-    )
+function Get-CvLibraryLocations {
+    param([Parameter(Mandatory = $true)]$VirtualFolders)
 
-    $recorded = [System.IO.Path]::GetFullPath($RecordedVideoPath)
-    if (Test-Path -LiteralPath $recorded -PathType Leaf) {
-        return [pscustomobject]@{
-            VideoPath = $recorded
-            State     = "RECORDED"
+    $locations = @()
+    $pending = New-Object System.Collections.Queue
+    $pending.Enqueue($VirtualFolders)
+
+    while ($pending.Count -gt 0) {
+        $value = $pending.Dequeue()
+        if ($null -eq $value) { continue }
+
+        $hasName = $null -ne $value.PSObject.Properties['Name']
+        $hasLocations = $null -ne $value.PSObject.Properties['Locations']
+
+        if ($hasName -and $hasLocations) {
+            $libraryName = [string]$value.Name
+            foreach ($location in $value.Locations) {
+                if ([string]::IsNullOrWhiteSpace([string]$location)) { continue }
+                $locations += [pscustomobject]@{
+                    LibraryName = $libraryName
+                    Root        = [System.IO.Path]::GetFullPath([string]$location)
+                }
+            }
+            continue
         }
-    }
 
-    $lastBackslash = $recorded.LastIndexOf('\')
-    $lastSlash = $recorded.LastIndexOf('/')
-    $lastSeparator = [Math]::Max($lastBackslash, $lastSlash)
-    if ($lastSeparator -lt 0 -or $lastSeparator -ge ($recorded.Length - 1)) {
-        throw "Source video not found and recorded path cannot be split: $recorded"
-    }
-
-    $directory = $recorded.Substring(0, $lastSeparator)
-    $fileName = $recorded.Substring($lastSeparator + 1)
-    $canonicalizedSibling = $directory + '\' + $ExpectedKey + ' - ' + $fileName
-
-    if (Test-Path -LiteralPath $canonicalizedSibling -PathType Leaf) {
-        return [pscustomobject]@{
-            VideoPath = $canonicalizedSibling
-            State     = "CANONICALIZED_SIBLING"
+        if ($value -is [System.Collections.IEnumerable] -and -not ($value -is [string])) {
+            foreach ($item in $value) {
+                $pending.Enqueue($item)
+            }
+            continue
         }
+
+        throw "Unexpected Jellyfin virtual-folder response item: $($value.GetType().FullName)"
     }
 
-    throw "Source video not found. Recorded path: $recorded; canonicalized sibling also not found: $canonicalizedSibling"
+    return @($locations)
 }
 
 function Get-CvNfoIdentity {
