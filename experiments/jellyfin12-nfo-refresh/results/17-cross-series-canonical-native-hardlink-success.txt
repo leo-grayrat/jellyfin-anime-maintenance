@@ -1,0 +1,82 @@
+Cross-series canonical native-hardlink pilot — SUCCESS
+Date: 2026-08-12
+Server: Jellyfin 12.0.0
+
+Purpose
+-------
+Final single-item validation before building the 243-target canonical view.
+This run used a different work, a different quarter directory, a different
+fansub naming pattern, and a native NTFS hard link.
+
+Selected candidate
+------------------
+Series: 描绘直至生命尽头
+SeriesId: 80c3271d0676bb752bf6435f48da401f
+OwnerId: f129cf3c69b341ecdd460c14d308a769
+Owner key: S01E01
+Group source count: 4
+Group expected keys: S01E01, S01E02, S01E03, S01E04
+Target: S01E02
+Quarter directory: 2026-07
+Original basename: [MingY] Kore Kaite Shine [02][WebRip][JPCN]
+Canonical basename: S01E02 - [MingY] Kore Kaite Shine [02][WebRip][JPCN]
+Hardlink method: Windows CreateHardLinkW
+
+Phase 1 — remove original hidden target
+---------------------------------------
+Initial owner source count: 4
+Final owner source count after removal: 3
+Owner contains old target path: False
+Old target normal-visible: False
+Old target expanded-visible: False
+
+The original LocalAlternateVersion member was fully removed before the
+canonical hardlink was created.
+
+Phase 2 — canonical hardlink observation
+-----------------------------------------
+Stable state:
+Owner source count:        3
+Owner contains canonical:  False
+Target normally visible:   True
+Target expanded visible:   True
+Target ItemId:              c4b9ebd10ffc0c140e1baddb6cb9f01a
+Target current key:         S01E02
+Target media-source count:  1
+Target SeriesId:            80c3271d0676bb752bf6435f48da401f
+Target SeasonId:            2bb62e212d6cb02ee7b2f43271eed104
+Visible through Series:     True
+
+RESULT: CANONICAL HARDLINK STAYS INDEPENDENT
+
+Cleanup / rollback
+------------------
+The canonical NFO and canonical hardlink were removed. Jellyfin then forgot
+the canonical item. The staged original NFO and video were moved back to their
+original paths.
+
+Final restored state:
+Owner source count:        4
+Owner contains old path:   True
+Original target normal:    False
+Original target expanded:  True
+Original target key:       S01E02
+Original media sources:    4
+
+RESTORE RESULT: original files and original Jellyfin group restored.
+Cleanup status: RESTORED
+
+Conclusion
+----------
+This cross-series experiment reproduces the Medalist result on an independent
+sample under 2026-07. A file that belongs to a wrong LocalAlternateVersion group
+stays independent when Jellyfin sees a canonical filename beginning with the
+explicit SxxEyy key, even when the video is supplied through a hard link rather
+than by renaming or copying the original media.
+
+Together with the Medalist experiments, this is sufficient to stop adding
+single-item pilots and move to the first 243-correction-target canonical-view
+generator.
+
+No SQLite writes, metadata FullRefresh, or AlternateSources DELETE calls were
+performed.
