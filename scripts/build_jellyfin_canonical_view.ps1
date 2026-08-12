@@ -179,8 +179,8 @@ foreach ($target in $targets) {
             -NfoPath $nfoPath `
             -ExpectedKey $target.ExpectedKey
 
-        $sourceRoot = [System.IO.Path]::GetPathRoot($videoPath)
-        $viewDriveRoot = [System.IO.Path]::GetPathRoot($canonical.Video)
+        $sourceRoot = Get-CvVolumeRoot -Path $videoPath
+        $viewDriveRoot = Get-CvVolumeRoot -Path $canonical.Video
         if (-not [string]::Equals($sourceRoot, $viewDriveRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
             throw "Source and canonical view are on different volumes: source=$sourceRoot view=$viewDriveRoot"
         }
