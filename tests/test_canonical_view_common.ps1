@@ -105,6 +105,7 @@ try {
     [System.IO.File]::WriteAllText($targetPath, "video")
     $manifestRows = @(
         [pscustomobject]@{
+            Work = "old"
             OriginalVideo = $video
             OriginalNfo = $nfo
             CanonicalVideo = $targetPath
@@ -119,6 +120,61 @@ try {
     [System.IO.File]::WriteAllText($unmanagedPath, "video")
     $unmanaged = Test-CvExistingTarget -TargetPath $unmanagedPath -SourcePath $video -ManifestIndex $manifestIndex -ManifestSourceColumn "OriginalVideo"
     Assert-Equal $unmanaged.State "CONFLICT" "unmanaged existing target"
+
+    $replacementRow = [pscustomobject]@{
+        Work = "new"
+        OriginalVideo = $video
+        OriginalNfo = $nfo
+        CanonicalVideo = $targetPath
+        CanonicalNfo = (Join-Path $tempRoot "managed.nfo")
+    }
+    $otherRow = [pscustomobject]@{
+        Work = "other"
+        OriginalVideo = (Join-Path $tempRoot "other.mkv")
+        OriginalNfo = (Join-Path $tempRoot "other.nfo")
+        CanonicalVideo = (Join-Path $tempRoot "other-canonical.mkv")
+        CanonicalNfo = (Join-Path $tempRoot "other-canonical.nfo")
+    }
+    $merged = @(Merge-CvManifestRows -ExistingRows @($manifestRows[0], $otherRow) -NewRows @($replacementRow))
+    Assert-Equal $merged.Count 2 "manifest merge does not duplicate canonical video"
+    $mergedReplacement = @($merged | Where-Object { (Get-CvPathKey -Path $_.CanonicalVideo) -eq (Get-CvPathKey -Path $targetPath) })
+    Assert-Equal $mergedReplacement.Count 1 "manifest replacement is unique"
+    Assert-Equal $mergedReplacement[0].Work "new" "manifest merge replaces existing row"
+
+    $buildRows = @(
+        [pscustomobject]@{ CanonicalVideo = 'D:\View\created-video.mkv'; CanonicalNfo = 'D:\View\created-video.nfo'; VideoResult = 'CREATED'; NfoResult = 'CREATED' },
+        [pscustomobject]@{ CanonicalVideo = 'D:\View\reused-video.mkv'; CanonicalNfo = 'D:\View\reused-video.nfo'; VideoResult = 'REUSED'; NfoResult = 'REUSED' },
+        [pscustomobject]@{ CanonicalVideo = 'D:\View\mixed-video.mkv'; CanonicalNfo = 'D:\View\mixed-video.nfo'; VideoResult = 'CREATED'; NfoResult = 'REUSED' }
+    )
+    $rollbackPaths = @(Get-CvRollbackPaths -BuildRows $buildRows)
+    Assert-Equal $rollbackPaths.Count 3 "rollback contains only current-build-created files"
+    Assert-True ($rollbackPaths -contains 'D:\View\created-video.mkv') "rollback includes created video"
+    Assert-True ($rollbackPaths -contains 'D:\View\created-video.nfo') "rollback includes created nfo"
+    Assert-True ($rollbackPaths -contains 'D:\View\mixed-video.mkv') "rollback includes mixed created video"
+    Assert-True (-not ($rollbackPaths -contains 'D:\View\reused-video.mkv')) "rollback excludes reused video"
+    Assert-True (-not ($rollbackPaths -contains 'D:\View\reused-video.nfo')) "rollback excludes reused nfo"
+
+    $nativeDir = Join-Path $tempRoot "native[02]"
+    New-CvNativeDirectory -Path $nativeDir
+    Assert-True (Test-Path -LiteralPath $nativeDir -PathType Container) "native directory creation"
+
+    $nativeSource = Join-Path $tempRoot "source[02].bin"
+    [System.IO.File]::WriteAllText($nativeSource, "hardlink-data")
+    $nativeLink = Join-Path $nativeDir "link[02].bin"
+    New-CvNativeHardLink -Path $nativeLink -Target $nativeSource | Out-Null
+    Assert-True (Test-Path -LiteralPath $nativeLink -PathType Leaf) "native hardlink creation"
+    Assert-Equal (Get-CvNativeFileLength -Path $nativeLink) (Get-CvNativeFileLength -Path $nativeSource) "native hardlink length"
+
+    $nativeCopy = Join-Path $nativeDir "copy[02].nfo"
+    Copy-CvNativeFile -Source $nfo -Destination $nativeCopy -Overwrite
+    Assert-True (Test-Path -LiteralPath $nativeCopy -PathType Leaf) "native file copy"
+    Assert-Equal (Get-CvNativeFileLength -Path $nativeCopy) ([long](Get-Item -LiteralPath $nfo).Length) "native copied file length"
+
+    Remove-CvNativeFile -Path $nativeLink
+    Remove-CvNativeFile -Path $nativeCopy
+    Assert-True (-not (Test-Path -LiteralPath $nativeLink)) "native hardlink removal"
+    Assert-True (-not (Test-Path -LiteralPath $nativeCopy)) "native copy removal"
+    Assert-True (Remove-CvNativeDirectoryIfEmpty -Path $nativeDir) "native empty directory removal"
 }
 finally {
     if (Test-Path -LiteralPath $tempRoot) {
@@ -145,9 +201,13 @@ Assert-True (-not $commandSource.Contains('New-Item -ItemType HardLink')) "comma
 Assert-True (-not $commandSource.Contains('[System.IO.Path]::GetPathRoot')) "command avoids MAX_PATH-sensitive GetPathRoot"
 Assert-True (-not $commandSource.Contains('Resolve-CvSourceVideo')) "command does not guess renamed source paths"
 Assert-True (-not $commandSource.Contains('Source aliases:')) "command does not carry pilot source-alias reporting"
+Assert-True ($commandSource.Contains('New-CvNativeHardLink')) "apply uses native hardlink helper"
+Assert-True ($commandSource.Contains('Merge-CvManifestRows')) "apply merges manifest deterministically"
+Assert-True ($commandSource.Contains('build-')) "apply uses build-scoped temp/log naming"
+Assert-True ($commandSource.Contains('Rollback')) "apply contains rollback path"
 
 $commonSource = [System.IO.File]::ReadAllText($commonPath)
 Assert-True (-not $commonSource.Contains('[System.IO.Path]::GetPathRoot')) "helper avoids MAX_PATH-sensitive GetPathRoot"
 Assert-True (-not $commonSource.Contains('Resolve-CvSourceVideo')) "helper does not guess renamed source paths"
 
-Write-Host "PASS: canonical view helper and command safety tests"
+Write-Host "PASS: canonical view helper, native filesystem, and command safety tests"
