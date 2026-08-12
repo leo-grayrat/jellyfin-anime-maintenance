@@ -119,6 +119,44 @@ function New-Item {
     return Microsoft.PowerShell.Management\New-Item @forward
 }
 
+# Experiment 14 prints its own Apply command in dry-run mode. Because experiment
+# 16 invokes 14 as a child script, that old hint would otherwise tell the user to
+# run the broken experiment 14 directly. Keep 14 immutable and rewrite only that
+# one display line while delegating every other Write-Host call unchanged.
+$baseApplyHint = "  .\experiments\jellyfin12-nfo-refresh\14-cross-series-canonical-hardlink-pilot.ps1 -ApiKey <API_KEY> -Apply"
+$nativeApplyHint = "  .\experiments\jellyfin12-nfo-refresh\16-cross-series-canonical-native-hardlink-pilot.ps1 -ApiKey <API_KEY> -Apply"
+
+function Write-Host {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0, ValueFromPipeline = $true, ValueFromRemainingArguments = $true)]
+        [object[]]$Object,
+
+        [ConsoleColor]$ForegroundColor,
+
+        [ConsoleColor]$BackgroundColor,
+
+        [switch]$NoNewline,
+
+        [object]$Separator = " "
+    )
+
+    process {
+        $displayObject = $Object
+        if ($Object.Count -eq 1 -and [string]$Object[0] -eq $baseApplyHint) {
+            $displayObject = @($nativeApplyHint)
+        }
+
+        $forward = @{ Object = $displayObject }
+        if ($PSBoundParameters.ContainsKey("ForegroundColor")) { $forward.ForegroundColor = $ForegroundColor }
+        if ($PSBoundParameters.ContainsKey("BackgroundColor")) { $forward.BackgroundColor = $BackgroundColor }
+        if ($NoNewline) { $forward.NoNewline = $true }
+        if ($PSBoundParameters.ContainsKey("Separator")) { $forward.Separator = $Separator }
+
+        Microsoft.PowerShell.Utility\Write-Host @forward
+    }
+}
+
 $pilotPath = Join-Path $PSScriptRoot "14-cross-series-canonical-hardlink-pilot.ps1"
 if (-not (Test-Path -LiteralPath $pilotPath -PathType Leaf)) {
     throw "Base experiment 14 not found: $pilotPath"
