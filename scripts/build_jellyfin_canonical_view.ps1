@@ -154,13 +154,18 @@ $failures = @()
 $canonicalPathOwners = @{}
 
 foreach ($target in $targets) {
-    $videoPath = [System.IO.Path]::GetFullPath([string]$target.VideoPath)
-    $nfoPath = [System.IO.Path]::ChangeExtension($videoPath, ".nfo")
+    $recordedVideoPath = [System.IO.Path]::GetFullPath([string]$target.VideoPath)
+    $recordedNfoPath = [System.IO.Path]::ChangeExtension($recordedVideoPath, ".nfo")
+    $videoPath = $recordedVideoPath
+    $nfoPath = $recordedNfoPath
 
     try {
-        if (-not (Test-Path -LiteralPath $videoPath -PathType Leaf)) {
-            throw "Source video not found."
-        }
+        $sourceResolution = Resolve-CvSourceVideo `
+            -RecordedVideoPath $recordedVideoPath `
+            -ExpectedKey $target.ExpectedKey
+        $videoPath = [string]$sourceResolution.VideoPath
+        $nfoPath = [System.IO.Path]::ChangeExtension($videoPath, ".nfo")
+
         if (-not (Test-Path -LiteralPath $nfoPath -PathType Leaf)) {
             throw "Source NFO not found: $nfoPath"
         }
@@ -175,8 +180,8 @@ foreach ($target in $targets) {
             -ViewRoot $ViewRoot `
             -LibraryName $library.LibraryName `
             -RelativeDirectory $library.RelativeDirectory `
-            -VideoPath $videoPath `
-            -NfoPath $nfoPath `
+            -VideoPath $recordedVideoPath `
+            -NfoPath $recordedNfoPath `
             -ExpectedKey $target.ExpectedKey
 
         $sourceRoot = Get-CvVolumeRoot -Path $videoPath
@@ -219,8 +224,11 @@ foreach ($target in $targets) {
             LibraryName       = [string]$library.LibraryName
             LibraryRoot       = [string]$library.Root
             RelativeDirectory = [string]$library.RelativeDirectory
+            RecordedVideo     = $recordedVideoPath
+            RecordedNfo       = $recordedNfoPath
             OriginalVideo     = $videoPath
             OriginalNfo       = $nfoPath
+            SourceResolution  = [string]$sourceResolution.State
             ExpectedSeason    = [int]$target.TargetSeason
             ExpectedEpisode   = [int]$target.TargetEpisode
             ExpectedKey       = [string]$target.ExpectedKey
@@ -232,11 +240,12 @@ foreach ($target in $targets) {
         }
     }
     catch {
-        $failures += New-CvFailure -VideoPath $videoPath -Stage "PREFLIGHT" -Message $_.Exception.Message
+        $failures += New-CvFailure -VideoPath $recordedVideoPath -Stage "PREFLIGHT" -Message $_.Exception.Message
     }
 }
 
 $plannedCount = $plan.Count
+$sourceAliases = @($plan | Where-Object { $_.SourceResolution -eq "CANONICALIZED_SIBLING" }).Count
 $videoReusable = @($plan | Where-Object { $_.VideoState -eq "REUSABLE" }).Count
 $videoCreate = @($plan | Where-Object { $_.VideoState -eq "MISSING" }).Count
 $nfoReusable = @($plan | Where-Object { $_.NfoState -eq "REUSABLE" }).Count
@@ -246,6 +255,7 @@ Write-Host ""
 Write-Host "=== Preflight summary ==="
 Write-Host "Planned targets:      $plannedCount"
 Write-Host "Preflight failures:   $($failures.Count)"
+Write-Host "Source aliases:       $sourceAliases"
 Write-Host "Videos reusable:      $videoReusable"
 Write-Host "Videos to create:     $videoCreate"
 Write-Host "NFOs reusable:        $nfoReusable"
@@ -262,6 +272,16 @@ if ($failures.Count -gt 0) {
 
 if ($plannedCount -ne $ExpectedTargetCount) {
     throw "Preflight did not produce exactly $ExpectedTargetCount plan rows. No files were written."
+}
+
+if ($sourceAliases -gt 0) {
+    Write-Host ""
+    Write-Host "Resolved canonicalized source aliases:"
+    foreach ($row in @($plan | Where-Object { $_.SourceResolution -eq "CANONICALIZED_SIBLING" })) {
+        Write-Host "- recorded: $($row.RecordedVideo)"
+        Write-Host "  source:   $($row.OriginalVideo)"
+        Write-Host "  view:     $($row.CanonicalVideo)"
+    }
 }
 
 Write-Host ""
