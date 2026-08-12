@@ -101,4 +101,21 @@ finally {
     }
 }
 
-Write-Host "PASS: canonical view helper tests"
+$commandPath = Join-Path $PSScriptRoot "..\scripts\build_jellyfin_canonical_view.ps1"
+if (-not (Test-Path -LiteralPath $commandPath -PathType Leaf)) {
+    throw "Expected command script does not exist yet: $commandPath"
+}
+
+$commandSource = [System.IO.File]::ReadAllText($commandPath)
+foreach ($requiredText in @(
+    '[string]$Root = "D:\Resource\BangumiLink"',
+    '[switch]$Apply',
+    '$ExpectedTargetCount = 243',
+    '/Library/VirtualFolders'
+)) {
+    Assert-True ($commandSource.Contains($requiredText)) "command source contains $requiredText"
+}
+Assert-True (-not $commandSource.Contains('_jellyfin_repair_staging')) "command does not use root-level legacy staging"
+Assert-True (-not $commandSource.Contains('New-Item -ItemType HardLink')) "command does not use PowerShell hardlink provider"
+
+Write-Host "PASS: canonical view helper and command safety tests"
