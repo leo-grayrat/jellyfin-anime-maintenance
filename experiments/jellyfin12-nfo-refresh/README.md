@@ -43,6 +43,7 @@ docs/history/2026-08-12-jellyfin12-path-parser-and-alternate-version.md
 | `11-python-sqlite-runtime-diagnosis.py` | 已运行，只读 | 定位 `py -3` 实际启动 Python 3.5 + SQLite 3.8.11；改用 Anaconda Python 3.13.5 + SQLite 3.45.3 后数据库只读诊断正常 |
 | `12-medalist-e09-remove-readd-pilot.ps1` | 已运行，关键结果 | 原名 S02E09 移出后旧关系消失；原样移回后 Jellyfin 主动重新创建 8-source LocalAlternateVersion group |
 | `13-medalist-e09-canonical-name-pilot.ps1` | 已运行，成功 | 同一个视频/NFO 以 `S02E09 - ` 前缀重新加入后保持独立、正常可见且进入 Series |
+| `14-cross-series-canonical-hardlink-pilot.ps1` | **待运行** | 自动选择一个非金牌得主、全成员均为 correction target 且目标 S/E 各不相同的干净错误组，用临时 `SxxEyy - ` 硬链接做最后一次跨作品验证；实验结束自动尝试恢复原路径和原 Jellyfin group |
 
 脚本中的 API Key 均使用参数传入；历史结果中的本机媒体绝对路径应保持脱敏。
 
@@ -105,12 +106,22 @@ docs/history/2026-08-12-jellyfin12-path-parser-and-alternate-version.md
 
 1. `攻壳机动队` 的错误组中存在同一 S/E 的合法多版本；正确长期方案必须保留同集多版本能力。
 2. `幼女战记（2017）`、`名侦探光之美少女！` 等 group 中存在 correction target 之外的未知成员，不能按已有修正规则盲目重建。
-3. 当前只用金牌得主 S02E09 完成了 canonical-name 因果实验；在批量应用前仍应把规范视图设计为可验证、可回滚，不直接改原始收藏文件。
+3. 当前只用金牌得主 S02E09 完成了 canonical-name 因果实验，因此批量生成规范视图前再做一次跨作品硬链接验证；通过后不再继续增加单集实验。
 
 ## 当前下一步
 
-暂时不继续写数据库直接修复脚本，也不把原始字幕组文件批量重命名。
+先运行最终单点验证：
 
-后续方向改为：**为 Jellyfin 建立一层规范输入视图**，让 Jellyfin 看到明确的 `SxxEyy - <原文件名>`，而原始年度/季度目录和字幕组文件名保持不动。
+```powershell
+.\experiments\jellyfin12-nfo-refresh\14-cross-series-canonical-hardlink-pilot.ps1 -ApiKey <API_KEY>
+```
 
-候选实现方式以同盘硬链接为优先方向，并同步提供同 basename 的 NFO。正式实现稍后单独设计。
+确认 dry-run 自动选出的 group/target 符合预期后，再执行：
+
+```powershell
+.\experiments\jellyfin12-nfo-refresh\14-cross-series-canonical-hardlink-pilot.ps1 -ApiKey <API_KEY> -Apply
+```
+
+该实验不会长期保留 canonical 文件：Apply 完成观察后会删除临时硬链接/NFO，并尝试恢复原始文件路径与原 Jellyfin alternate group。
+
+若跨作品实验得到 `CANONICAL HARDLINK STAYS INDEPENDENT` 且 cleanup 为 `RESTORED`，下一步直接进入第一版 **243 个 correction targets 规范视图生成器**；不再继续增加单集实验。
