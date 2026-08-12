@@ -173,6 +173,39 @@ VideoListResolver 将其组织为 LocalAlternateVersion
 
 因此，对本服务器而言，**不应把“直接清理 jellyfin.db 的错误 alternate 关系”作为长期主方案**。即使数据库当下被清干净，只要 Jellyfin 继续看到同样的原始路径/文件名，扫描时仍可能再次制造错误关系。
 
+## 阶段复盘：NFO 修复路线为何到这里结束
+
+这一轮调查最初的设想很直接：先判断每个文件正确的作品、季号和集号，写入 NFO，再让 Jellyfin 重新读取。若问题只是“缺少或识别错了元数据”，这条路线本应足够。
+
+实际实验也证明了它并非完全无效：Jellyfin 12 的 Episode FullRefresh 确实会读取 NFO 中的 `<season>` / `<episode>`，Series FullRefresh 在目标 Season 已存在时也能重新挂接 SeasonId。早期批量结果中的“230/243 OK”，正是这一层修正成功的表现。
+
+但后来确认，**“Episode 自己的季/集号正确”与“它在 Jellyfin 中是独立 Episode”是两个不同层次的问题。** 一个隐藏 item 可以已经是 S02E09，同时仍被 Jellyfin 作为 S02E02 的 `LocalAlternateVersion`。NFO 能改正 item metadata，却不会因为新的 S/E 值而自动撤销已经建立的 alternate relationship。
+
+进一步的移出—原样移回实验排除了“只是一批历史脏关系”的解释：文件移出后旧关系确实消失，但原名重新加入时，当前 Jellyfin 扫描流程会再次主动建立同样的错误组。也就是说，即使手工或脚本清理数据库，只要输入路径保持原样，错误仍可能在下一次扫描中重现。
+
+源码与 canonical-name 实验最终把原因闭合为一个顺序问题：Jellyfin 会在 NFO 元数据合并之前先解析完整路径并组织本地多版本；祖先目录中的 `YYYY-MM` 可能被宽松 episode 规则提前命中，使本来不同的物理 Episode 获得相同的早期解析 key。后续 NFO 虽然能把各 item 的 S/E 修正确，却不会回头重建已经形成的 LocalAlternateVersion 结构。
+
+因此，到这里应当明确区分两件事：
+
+- **把 NFO 当作“最终修复手段”的路线基本结束。** 仅靠写 NFO + refresh，无法稳定解决本轮已经确认的错误多版本关系。
+- **NFO 作为正确身份信息并没有失效。** 现有规则、run log 和 NFO 仍然是我们掌握的权威 S/E 数据，后续规范视图正是依靠这些信息生成明确的 `SxxEyy - <原文件名>` 输入。
+
+换言之，仓库最初较窄的目标——“生成正确 NFO 后直接让 Jellyfin 恢复正常”——已经被实际行为推翻；但更上层的目标没有改变：**维护非标准动漫资源，使 Jellyfin 获得正确、可重复、可审计的媒体结构。** 实现路径只是从“修正 Jellyfin 已经识别后的 metadata”转向“给 Jellyfin 提供从第一步就不容易被错误解析的规范输入”。
+
+这也是后续架构变化的核心：
+
+```text
+原始字幕组文件
+        ↓
+规则 / NFO / correction target 提供正确身份
+        ↓
+生成 Jellyfin 专用规范路径
+        ↓
+SxxEyy - <原文件名>
+        ↓
+Jellyfin 从输入阶段开始正确识别
+```
+
 ## 后续方向：规范 Jellyfin 的输入视图
 
 下一阶段暂不改原始收藏目录。更合适的方向是给 Jellyfin 提供一层独立的“规范视图”，让 Jellyfin 看到明确、稳定的文件名，例如：
