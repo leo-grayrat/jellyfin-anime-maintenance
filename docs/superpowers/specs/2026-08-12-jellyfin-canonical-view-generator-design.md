@@ -23,7 +23,7 @@ D:\Resource\BangumiLink\
 
 - `View`：长期存在、供 Jellyfin 后续使用的规范视图。
 - `Temp`：构建过程中的 staging / probe / 临时文件。
-- `Logs`：manifest 和每次构建日志。
+- `Logs`：manifest 和正式 Apply 的构建日志。
 
 硬约束：
 
@@ -53,6 +53,17 @@ D:\Resource\BangumiLink\
 - 不自动处理 correction target 之外的 unknown member；
 - 不顺手修正常文件。
 
+## Jellyfin 读取依赖
+
+生成器接受与现有 Jellyfin 12 脚本一致的：
+
+```text
+-ApiKey
+-Server（默认 http://127.0.0.1:8096）
+```
+
+Jellyfin API 只用于读取 VirtualFolders / library locations，以确认每个原视频唯一属于哪个现有 library root，并取得对应 `LibraryName`。生成器不通过 API 修改 Jellyfin。
+
 ## 规范视图路径
 
 视图根目录：
@@ -61,27 +72,36 @@ D:\Resource\BangumiLink\
 D:\Resource\BangumiLink\View
 ```
 
-第一版按原 Jellyfin 库和作品组织：
+第一版不直接拿 `Work` 字段当唯一作品目录，而是保留原视频在其 Jellyfin library root 下的**相对目录结构**。
+
+例如原路径：
 
 ```text
-D:\Resource\BangumiLink\View\<LibraryName>\<Work>\
+Library root:
+D:\Bangumi\2026\2026-07
+
+Original:
+D:\Bangumi\2026\2026-07\これ描いて死ね\[MingY] Kore Kaite Shine [02][WebRip][JPCN].mkv
 ```
 
-每个目标至少生成：
+对应 View：
 
 ```text
-SxxEyy - <原视频文件名>
-SxxEyy - <原 NFO 文件名>
+D:\Resource\BangumiLink\View\2026年7月新番\これ描いて死ね\S01E02 - [MingY] Kore Kaite Shine [02][WebRip][JPCN].mkv
+D:\Resource\BangumiLink\View\2026年7月新番\これ描いて死ね\S01E02 - [MingY] Kore Kaite Shine [02][WebRip][JPCN].nfo
 ```
 
-例如：
+即：
 
 ```text
-S01E02 - [MingY] Kore Kaite Shine [02][WebRip][JPCN].mkv
-S01E02 - [MingY] Kore Kaite Shine [02][WebRip][JPCN].nfo
+View\<LibraryName>\<OriginalRelativeDirectory>\SxxEyy - <OriginalFilename>
 ```
+
+这样避免仅用作品标题造成同名作品冲突，也避免重新发明作品目录结构。
 
 `SxxEyy` 由 correction target 的 `Season` / `Episode` 生成，不从原字幕组文件名猜测。
+
+如果 `LibraryName` 本身无法直接作为 Windows 目录名，第一版不擅自清洗名称，而是在 preflight 阶段失败并报告；避免产生不可逆的隐式映射规则。
 
 ## 视频与 NFO 的处理方式
 
@@ -118,7 +138,7 @@ S01E01 - version-B.mkv
 
 ## 预检
 
-默认模式为 dry-run，只读取并计算，不创建 View 文件。
+默认模式为 dry-run，只读取并计算，不创建 `View`、`Temp`、`Logs` 文件。
 
 preflight 至少检查：
 
@@ -128,11 +148,12 @@ preflight 至少检查：
 4. NFO XML 可解析；
 5. NFO 中 `<season>` / `<episode>` 与 correction target 一致；
 6. 能唯一确定原视频所属 Jellyfin library location；
-7. canonical target path 可生成；
-8. canonical 路径之间无完全冲突；
-9. hardlink 源与 `View` 目标位于同一卷；
-10. 已存在目标若不是当前 manifest 所管理的同一 source，则停止，不覆盖；
-11. 不对 correction target 之外的 unknown member 做任何操作。
+7. 原视频相对 library root 的目录可安全映射到 `View`；
+8. canonical target path 可生成；
+9. canonical 路径之间无完全冲突；
+10. hardlink 源与 `View` 目标位于同一卷；
+11. 已存在目标若不是当前 manifest 所管理的同一 source，则停止，不覆盖；
+12. 不对 correction target 之外的 unknown member 做任何操作。
 
 任何关键校验失败时，整个 Apply 不开始。
 
@@ -146,7 +167,7 @@ preflight 至少检查：
 
 - 完成全部 243 个目标的 preflight；
 - 生成本次 build plan；
-- 在 `D:\Resource\BangumiLink\Temp\build-<timestamp>` 保存本次临时状态/计划数据；
+- 在 `D:\Resource\BangumiLink\Temp\build-<timestamp>` 保存本次 Apply 的临时状态/计划数据；
 - 此阶段不触碰原媒体。
 
 ### 阶段 2：构建 View
@@ -163,8 +184,8 @@ preflight 至少检查：
 如果单个目标构建失败：
 
 - 停止继续扩大；
-- 删除本次 build 中已经新建且由本次 manifest 明确标记的 View 文件；
-- 不删除历史已有、来源一致并已被 manifest 管理的文件；
+- 删除本次 build 中已经新建且由本次 build plan 明确标记的 View 文件；
+- 不删除历史已有、来源一致并已被长期 manifest 管理的文件；
 - 原媒体始终不需要恢复，因为从未移动或改名。
 
 ## Manifest
@@ -180,6 +201,8 @@ D:\Resource\BangumiLink\Logs\manifest.csv
 ```text
 Work
 LibraryName
+LibraryRoot
+OriginalRelativeDirectory
 OriginalVideo
 OriginalNfo
 ExpectedSeason
@@ -194,11 +217,11 @@ Status
 
 manifest 是后续增量同步、验证、删除 stale link、以及最终扩展为完整 TV 库规范视图的基础。
 
-第一版只写入由生成器实际确认/创建的 243-target 记录。
+第一版只写入由生成器实际确认/创建或确认可复用的 243-target 记录。
 
 ## 每次构建日志
 
-每次运行额外生成：
+只有正式 `-Apply` 才生成持久构建日志：
 
 ```text
 D:\Resource\BangumiLink\Logs\build-<timestamp>.csv
@@ -212,17 +235,21 @@ D:\Resource\BangumiLink\Logs\build-<timestamp>.csv
 - 是否复用既有 canonical 文件；
 - 失败原因。
 
+普通 dry-run 只输出控制台摘要，不在 `BangumiLink` 下写文件。
+
 控制台输出只保留摘要和错误，不沿用实验 16 中 wrapper 导致的额外数字输出污染。
 
 ## 幂等性
 
 生成器应允许重复运行。
 
-如果 canonical 视频已经存在，并且 manifest 明确记录它来自同一个 `OriginalVideo`，且文件长度一致，则视为可复用，不重新创建。
+如果 canonical 视频已经存在，并且长期 manifest 明确记录它来自同一个 `OriginalVideo`，且文件长度一致，则视为可复用，不重新创建。
 
 如果 canonical NFO 已存在，并且对应同一 source，则允许覆盖复制，以保证 View NFO 与原 NFO 当前内容一致。
 
 如果目标文件存在但 manifest 无法证明其来源，则停止，不猜测、不覆盖。
+
+第一版不主动删除 manifest 中已不再出现在当前 243-target 输入里的 stale 记录或文件；stale cleanup 留给后续独立维护功能，避免首次生成器承担删除责任。
 
 ## Jellyfin 集成边界
 
