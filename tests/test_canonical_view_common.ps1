@@ -58,6 +58,20 @@ try {
     [System.IO.File]::WriteAllText($video, "video")
     [System.IO.File]::WriteAllText($nfo, "<episodedetails><season>1</season><episode>2</episode></episodedetails>")
 
+    $recordedResolution = Resolve-CvSourceVideo -RecordedVideoPath $video -ExpectedKey "S01E02"
+    Assert-Equal $recordedResolution.State "RECORDED" "existing recorded source wins"
+    Assert-Equal (Get-CvPathKey -Path $recordedResolution.VideoPath) (Get-CvPathKey -Path $video) "recorded source path"
+
+    $missingRecordedVideo = Join-Path $tempRoot "pilot-renamed.mkv"
+    $canonicalizedSibling = Join-Path $tempRoot "S01E02 - pilot-renamed.mkv"
+    [System.IO.File]::WriteAllText($canonicalizedSibling, "video")
+    $aliasResolution = Resolve-CvSourceVideo -RecordedVideoPath $missingRecordedVideo -ExpectedKey "S01E02"
+    Assert-Equal $aliasResolution.State "CANONICALIZED_SIBLING" "canonicalized sibling fallback"
+    Assert-Equal (Get-CvPathKey -Path $aliasResolution.VideoPath) (Get-CvPathKey -Path $canonicalizedSibling) "canonicalized sibling path"
+
+    $unresolvedRecordedVideo = Join-Path $tempRoot "does-not-exist.mkv"
+    Assert-Throws { Resolve-CvSourceVideo -RecordedVideoPath $unresolvedRecordedVideo -ExpectedKey "S01E02" | Out-Null } "missing source without canonicalized sibling"
+
     $csvOk = Join-Path $tempRoot "targets-ok.csv"
     @(
         [pscustomobject]@{ Work = "A"; RuleId = "r1"; Action = "WRITE"; VideoPath = $video; Season = "1"; Episode = "2" },
