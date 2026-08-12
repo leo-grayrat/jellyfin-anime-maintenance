@@ -22,7 +22,7 @@ foreach ($scriptPath in $scriptPaths) {
 
     if ($errors.Count -gt 0) {
         $messages = ($errors | ForEach-Object { $_.Message }) -join "; "
-        throw "PowerShell parser errors in $scriptPath: $messages"
+        throw ("PowerShell parser errors in {0}: {1}" -f $scriptPath, $messages)
     }
 }
 
