@@ -1,11 +1,13 @@
 # Jellyfin 12 NFO 刷新实验存档
 
-这里保存 2026-08-11 至 2026-08-12 调查 Jellyfin 12 NFO 季号修正、alternate-version 错误合并与路径解析问题时使用的一次性脚本和脱敏运行结果。
+这里保存 2026-08-11 至 2026-08-13 调查 Jellyfin 12 NFO 季号修正、alternate-version 错误合并、路径解析与 canonical hardlink 规避方案时使用的一次性脚本和脱敏运行结果。
 
-**这里不是正式工具入口。** 当前正式批量工具仍是：
+**这里不是正式工具入口。** 当前正式工具包括：
 
 ```text
+scripts/jellyfin_tv_nfo_fix.ps1
 scripts/refresh_jellyfin_nfo_12.ps1
+scripts/build_jellyfin_canonical_view.ps1
 ```
 
 调查记录见：
@@ -13,18 +15,14 @@ scripts/refresh_jellyfin_nfo_12.ps1
 ```text
 docs/history/2026-08-11-jellyfin12-nfo-refresh.md
 docs/history/2026-08-12-jellyfin12-path-parser-and-alternate-version.md
+docs/canonical-view.md
 ```
 
 ## 为什么要单独存档
 
-这一轮调查先后出现了 API 读取方式错误、Episode 与 Series 两阶段刷新、alternate version 查询折叠、Fate 缺失 Season 1、全库错误 alternate group、数据库关系诊断，以及最终定位到 `YYYY-MM` 路径参与 Episode 解析的问题。若只保留最终脚本，很容易把“当时为什么这样改”“哪些假设已经被推翻”丢掉。
+这一轮调查先后出现了 API 读取方式错误、Episode 与 Series 两阶段刷新、alternate version 查询折叠、Fate 缺失 Season 1、全库错误 alternate group、数据库关系诊断、`YYYY-MM` 路径参与 Episode 解析、canonical-name 验证、PowerShell hardlink provider 路径问题，以及最后的 native hardlink 跨作品验证。
 
-因此这里同时保存：
-
-- 未进入正式工具的一次性实验脚本；
-- 每次实际运行的关键输出；
-- 已进入 Git 历史的批量脚本版本对应 commit；
-- 已证实、已推翻和仍待验证的结论。
+如果只保留最终脚本，很容易把“当时为什么这样改”“哪些假设已经被推翻”丢掉。因此这里同时保存一次性实验脚本、关键运行结果和已经闭合的因果链。
 
 ## 一次性实验脚本
 
@@ -43,13 +41,15 @@ docs/history/2026-08-12-jellyfin12-path-parser-and-alternate-version.md
 | `11-python-sqlite-runtime-diagnosis.py` | 已运行，只读 | 定位 `py -3` 实际启动 Python 3.5 + SQLite 3.8.11；改用 Anaconda Python 3.13.5 + SQLite 3.45.3 后数据库只读诊断正常 |
 | `12-medalist-e09-remove-readd-pilot.ps1` | 已运行，关键结果 | 原名 S02E09 移出后旧关系消失；原样移回后 Jellyfin 主动重新创建 8-source LocalAlternateVersion group |
 | `13-medalist-e09-canonical-name-pilot.ps1` | 已运行，成功 | 同一个视频/NFO 以 `S02E09 - ` 前缀重新加入后保持独立、正常可见且进入 Series |
-| `14-cross-series-canonical-hardlink-pilot.ps1` | **待运行** | 自动选择一个非金牌得主、全成员均为 correction target 且目标 S/E 各不相同的干净错误组，用临时 `SxxEyy - ` 硬链接做最后一次跨作品验证；实验结束自动尝试恢复原路径和原 Jellyfin group |
+| `14-cross-series-canonical-hardlink-pilot.ps1` | 已运行，Apply 失败但自动恢复 | 选中《描绘直至生命尽头》S01E02；移出旧项成功，但 `New-Item -ItemType HardLink` 因带 `[]` 路径被 PowerShell provider 误判为不存在，cleanup 恢复原组 |
+| `15-hardlink-path-probe.ps1` | 已运行，定位根因 | 证明 `Test-Path -LiteralPath` 可见带 `[02]` 的 source，而普通 `-Path` 不可见；PowerShell hardlink provider 失败，但 native `CreateHardLinkW` 成功 |
+| `16-cross-series-canonical-native-hardlink-pilot.ps1` | 已运行，成功 | 使用 native `CreateHardLinkW` 重做实验 14；同一跨作品 S01E02 canonical hardlink 保持独立、Series 可见，cleanup 后原文件和原 alternate group 恢复 |
 
-脚本中的 API Key 均使用参数传入；历史结果中的本机媒体绝对路径应保持脱敏。
+脚本中的 API Key 均使用参数传入；历史结果中的本机媒体绝对路径不作为正式公共接口。
 
 ## 正式批量脚本版本
 
-批量脚本本身已经由 Git 保存完整版本，因此这里用不可变 commit SHA 索引：
+批量 NFO refresh 脚本本身已经由 Git 保存完整版本，因此这里用不可变 commit SHA 索引：
 
 | 版本 | Commit | 变化 | 对应结果 |
 | --- | --- | --- | --- |
@@ -78,10 +78,12 @@ docs/history/2026-08-12-jellyfin12-path-parser-and-alternate-version.md
 11. Python/SQLite 运行时诊断：`py -3` 实际是 Python 3.5.0 + SQLite 3.8.11；Anaconda Python 3.13.5 + SQLite 3.45.3 可以正常读取 Jellyfin 12 schema。
 12. `14-medalist-e09-remove-readd-remerged.txt`：旧关系移除后，原名文件重新加入仍被再次合并，证明问题不是单纯历史脏数据。
 13. `15-medalist-e09-canonical-name-independent.txt`：同一文件以显式 `S02E09 - ` 前缀重新加入后保持独立，media-source count=1，且通过 Series 可见。
+14. `16-hardlink-path-probe-powershell-provider.txt`：带方括号路径在 PowerShell hardlink provider 中误判，native `CreateHardLinkW` 成功。
+15. `17-cross-series-canonical-native-hardlink-success.txt`：第二个作品/季度中，canonical native hardlink 同样保持独立，实验后成功恢复原状态。
 
 ## 当前结论
 
-截至 2026-08-12 已经实际验证：
+截至 2026-08-13 已经实际验证：
 
 - Jellyfin 12 的 Episode FullRefresh 会尊重 episode NFO 中显式 `<season>`；
 - 目标 Season 已存在时，Series FullRefresh 可以重新挂接 `SeasonId` / `SeasonName`；
@@ -92,36 +94,30 @@ docs/history/2026-08-12-jellyfin12-path-parser-and-alternate-version.md
 - 因此问题不是只修一次 jellyfin.db 就能永久解决的“历史残留”；
 - Jellyfin v12.0-rc5 的 TV 多版本分组会先根据 `EpisodePathParser` 对完整路径得到的 season/episode key 分组，再进入后续 NFO metadata 修正；
 - 媒体库祖先目录中的 `YYYY-MM`（如 `2026-01`）可能被宽松的 `([0-9]+)-([0-9]+)` episode 规则抢先匹配，从而让同一季度目录里的不同文件得到相同错误 key；
-- 对同一个 S02E09，在文件名最前面加入显式 `S02E09 - ` 后，Jellyfin 能建立独立 Episode，说明明确的 `SxxEyy` 命名可以规避当前服务器上的错误分组。
+- 对同一个 S02E09，在文件名最前面加入显式 `S02E09 - ` 后，Jellyfin 能建立独立 Episode；
+- 在另一个作品/季度中，用 hardlink 暴露 `S01E02 - <原文件名>` 也能保持独立，说明方案不只对金牌得主成立；
+- Windows PowerShell 5.1 的 hardlink provider 对带 `[]` 的字幕组路径不可靠，正式方案应使用 native `CreateHardLinkW`；
+- 243-target canonical view 已完成真实 Apply：243 个视频 hardlink + 243 个 NFO 全部 ready；随后 dry-run 将 243/243 视频和 NFO 全部判定为 reusable，验证第一版生成器的幂等行为。
 
-完整因果链与源码位置整理见：
+完整因果链与正式生成器说明见：
 
 ```text
 docs/history/2026-08-12-jellyfin12-path-parser-and-alternate-version.md
+docs/canonical-view.md
 ```
 
 ## 仍需注意的边界
 
 不能因此简单把所有文件“一律拆开”：
 
-1. `攻壳机动队` 的错误组中存在同一 S/E 的合法多版本；正确长期方案必须保留同集多版本能力。
+1. `攻壳机动队` 的错误组中存在同一 S/E 的合法多版本；完整长期方案仍需保留同集多版本能力。
 2. `幼女战记（2017）`、`名侦探光之美少女！` 等 group 中存在 correction target 之外的未知成员，不能按已有修正规则盲目重建。
-3. 当前只用金牌得主 S02E09 完成了 canonical-name 因果实验，因此批量生成规范视图前再做一次跨作品硬链接验证；通过后不再继续增加单集实验。
+3. 当前成功的 canonical View 只覆盖 243 个 correction targets，不是完整 TV 库镜像。
 
 ## 当前下一步
 
-先运行最终单点验证：
+**单点实验阶段已经结束，不再继续增加单集/单作品验证。**
 
-```powershell
-.\experiments\jellyfin12-nfo-refresh\14-cross-series-canonical-hardlink-pilot.ps1 -ApiKey <API_KEY>
-```
+第一版 243-target canonical view 已经真实构建并通过重复 dry-run 幂等验证。下一阶段应从“验证 canonical naming 是否有效”转向“如何构建完整 TV 规范镜像，并在不丢失正常动画、合法多版本和其他 sidecar 的前提下最终切换 Jellyfin 媒体库路径”。
 
-确认 dry-run 自动选出的 group/target 符合预期后，再执行：
-
-```powershell
-.\experiments\jellyfin12-nfo-refresh\14-cross-series-canonical-hardlink-pilot.ps1 -ApiKey <API_KEY> -Apply
-```
-
-该实验不会长期保留 canonical 文件：Apply 完成观察后会删除临时硬链接/NFO，并尝试恢复原始文件路径与原 Jellyfin alternate group。
-
-若跨作品实验得到 `CANONICAL HARDLINK STAYS INDEPENDENT` 且 cleanup 为 `RESTORED`，下一步直接进入第一版 **243 个 correction targets 规范视图生成器**；不再继续增加单集实验。
+在完整镜像完成前，不要把只有 243 个目标的 `View` 单独替换主 TV 库，也不要与原始 TV 路径同时加入主库，以免正常动画消失或 243 个目标重复出现。
