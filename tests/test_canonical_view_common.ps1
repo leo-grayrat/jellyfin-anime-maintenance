@@ -32,6 +32,13 @@ $relative = Get-CvRelativeDirectory `
     -LibraryRoot 'D:\Bangumi\2026\2026-07'
 Assert-Equal $relative 'Work A' "relative directory"
 
+$longDrivePath = 'D:\' + (('very-long-folder\' * 20)) + 'episode.mkv'
+Assert-True ($longDrivePath.Length -gt 260) "long-path fixture exceeds MAX_PATH"
+Assert-Equal (Get-CvVolumeRoot -Path $longDrivePath) 'D:\' "volume root from long drive path"
+Assert-Equal (Get-CvVolumeRoot -Path '\\?\D:\very-long-folder\episode.mkv') 'D:\' "volume root from extended drive path"
+Assert-Equal (Get-CvVolumeRoot -Path '\\server\share\folder\episode.mkv') '\\server\share\' "volume root from UNC path"
+Assert-Equal (Get-CvVolumeRoot -Path '\\?\UNC\server\share\folder\episode.mkv') '\\server\share\' "volume root from extended UNC path"
+
 $paths = Get-CvCanonicalPaths `
     -ViewRoot 'D:\Resource\BangumiLink\View' `
     -LibraryName '2026-07' `
@@ -117,5 +124,9 @@ foreach ($requiredText in @(
 }
 Assert-True (-not $commandSource.Contains('_jellyfin_repair_staging')) "command does not use root-level legacy staging"
 Assert-True (-not $commandSource.Contains('New-Item -ItemType HardLink')) "command does not use PowerShell hardlink provider"
+Assert-True (-not $commandSource.Contains('[System.IO.Path]::GetPathRoot')) "command avoids MAX_PATH-sensitive GetPathRoot"
+
+$commonSource = [System.IO.File]::ReadAllText($commonPath)
+Assert-True (-not $commonSource.Contains('[System.IO.Path]::GetPathRoot')) "helper avoids MAX_PATH-sensitive GetPathRoot"
 
 Write-Host "PASS: canonical view helper and command safety tests"
