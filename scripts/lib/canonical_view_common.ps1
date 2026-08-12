@@ -13,6 +13,34 @@ function Get-CvPathKey {
     }
 }
 
+function Get-CvVolumeRoot {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "Path must not be empty."
+    }
+
+    $normalized = $Path.Trim().Replace('/', '\')
+
+    if ($normalized -match '^\\\\\?\\UNC\\([^\\]+)\\([^\\]+)(?:\\|$)') {
+        return "\\$($Matches[1])\$($Matches[2])\"
+    }
+
+    if ($normalized -match '^\\\\\?\\([A-Za-z]:)\\') {
+        return $Matches[1].ToUpperInvariant() + '\'
+    }
+
+    if ($normalized -match '^([A-Za-z]:)\\') {
+        return $Matches[1].ToUpperInvariant() + '\'
+    }
+
+    if ($normalized -match '^\\\\([^\\]+)\\([^\\]+)(?:\\|$)') {
+        return "\\$($Matches[1])\$($Matches[2])\"
+    }
+
+    throw "Unsupported Windows absolute path: $Path"
+}
+
 function Get-CvEpisodeKey {
     param(
         [Parameter(Mandatory = $true)][int]$Season,
@@ -250,9 +278,22 @@ public static class CvNativeHardLink
         string lpExistingFileName,
         IntPtr lpSecurityAttributes);
 
+    private static string ToExtendedPath(string path)
+    {
+        if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+        {
+            return path;
+        }
+        if (path.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return @"\\?\UNC\" + path.Substring(2);
+        }
+        return @"\\?\" + path;
+    }
+
     public static void Create(string newPath, string existingPath)
     {
-        if (!CreateHardLinkW(newPath, existingPath, IntPtr.Zero))
+        if (!CreateHardLinkW(ToExtendedPath(newPath), ToExtendedPath(existingPath), IntPtr.Zero))
         {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
@@ -282,8 +323,8 @@ function New-CvNativeHardLink {
         throw "Hardlink destination directory does not exist: $parent"
     }
 
-    $sourceRoot = [System.IO.Path]::GetPathRoot($existingPath)
-    $targetRoot = [System.IO.Path]::GetPathRoot($newPath)
+    $sourceRoot = Get-CvVolumeRoot -Path $existingPath
+    $targetRoot = Get-CvVolumeRoot -Path $newPath
     if (-not [string]::Equals($sourceRoot, $targetRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Hardlink source and destination are on different volumes: source=$sourceRoot target=$targetRoot"
     }
