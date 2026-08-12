@@ -39,6 +39,24 @@ Assert-Equal (Get-CvVolumeRoot -Path '\\?\D:\very-long-folder\episode.mkv') 'D:\
 Assert-Equal (Get-CvVolumeRoot -Path '\\server\share\folder\episode.mkv') '\\server\share\' "volume root from UNC path"
 Assert-Equal (Get-CvVolumeRoot -Path '\\?\UNC\server\share\folder\episode.mkv') '\\server\share\' "volume root from extended UNC path"
 
+$virtualFolderCollection = New-Object System.Collections.ArrayList
+[void]$virtualFolderCollection.Add([pscustomobject]@{
+    Name = 'Library A'
+    Locations = @('D:\Media\A')
+})
+[void]$virtualFolderCollection.Add([pscustomobject]@{
+    Name = 'Library B'
+    Locations = @('D:\Media\B1', 'D:\Media\B2')
+})
+$libraryLocations = @(Get-CvLibraryLocations -VirtualFolders $virtualFolderCollection)
+Assert-Equal $libraryLocations.Count 3 "virtual folder collection expands to individual locations"
+Assert-Equal $libraryLocations[0].LibraryName 'Library A' "first library name remains individual"
+Assert-Equal $libraryLocations[0].Root 'D:\Media\A' "first library root"
+Assert-Equal $libraryLocations[1].LibraryName 'Library B' "second library name remains individual"
+Assert-Equal $libraryLocations[1].Root 'D:\Media\B1' "second library first root"
+Assert-Equal $libraryLocations[2].LibraryName 'Library B' "second library name repeats for second root"
+Assert-Equal $libraryLocations[2].Root 'D:\Media\B2' "second library second root"
+
 $paths = Get-CvCanonicalPaths `
     -ViewRoot 'D:\Resource\BangumiLink\View' `
     -LibraryName '2026-07' `
@@ -57,20 +75,6 @@ try {
     $nfo = Join-Path $tempRoot "episode01.nfo"
     [System.IO.File]::WriteAllText($video, "video")
     [System.IO.File]::WriteAllText($nfo, "<episodedetails><season>1</season><episode>2</episode></episodedetails>")
-
-    $recordedResolution = Resolve-CvSourceVideo -RecordedVideoPath $video -ExpectedKey "S01E02"
-    Assert-Equal $recordedResolution.State "RECORDED" "existing recorded source wins"
-    Assert-Equal (Get-CvPathKey -Path $recordedResolution.VideoPath) (Get-CvPathKey -Path $video) "recorded source path"
-
-    $missingRecordedVideo = Join-Path $tempRoot "pilot-renamed.mkv"
-    $canonicalizedSibling = Join-Path $tempRoot "S01E02 - pilot-renamed.mkv"
-    [System.IO.File]::WriteAllText($canonicalizedSibling, "video")
-    $aliasResolution = Resolve-CvSourceVideo -RecordedVideoPath $missingRecordedVideo -ExpectedKey "S01E02"
-    Assert-Equal $aliasResolution.State "CANONICALIZED_SIBLING" "canonicalized sibling fallback"
-    Assert-Equal (Get-CvPathKey -Path $aliasResolution.VideoPath) (Get-CvPathKey -Path $canonicalizedSibling) "canonicalized sibling path"
-
-    $unresolvedRecordedVideo = Join-Path $tempRoot "does-not-exist.mkv"
-    Assert-Throws { Resolve-CvSourceVideo -RecordedVideoPath $unresolvedRecordedVideo -ExpectedKey "S01E02" | Out-Null } "missing source without canonicalized sibling"
 
     $csvOk = Join-Path $tempRoot "targets-ok.csv"
     @(
@@ -139,8 +143,11 @@ foreach ($requiredText in @(
 Assert-True (-not $commandSource.Contains('_jellyfin_repair_staging')) "command does not use root-level legacy staging"
 Assert-True (-not $commandSource.Contains('New-Item -ItemType HardLink')) "command does not use PowerShell hardlink provider"
 Assert-True (-not $commandSource.Contains('[System.IO.Path]::GetPathRoot')) "command avoids MAX_PATH-sensitive GetPathRoot"
+Assert-True (-not $commandSource.Contains('Resolve-CvSourceVideo')) "command does not guess renamed source paths"
+Assert-True (-not $commandSource.Contains('Source aliases:')) "command does not carry pilot source-alias reporting"
 
 $commonSource = [System.IO.File]::ReadAllText($commonPath)
 Assert-True (-not $commonSource.Contains('[System.IO.Path]::GetPathRoot')) "helper avoids MAX_PATH-sensitive GetPathRoot"
+Assert-True (-not $commonSource.Contains('Resolve-CvSourceVideo')) "helper does not guess renamed source paths"
 
 Write-Host "PASS: canonical view helper and command safety tests"
