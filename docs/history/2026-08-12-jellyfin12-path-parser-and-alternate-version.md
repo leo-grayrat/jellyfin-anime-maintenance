@@ -206,22 +206,117 @@ SxxEyy - <原文件名>
 Jellyfin 从输入阶段开始正确识别
 ```
 
-## 后续方向：规范 Jellyfin 的输入视图
+## 后续验证：跨作品 hardlink
 
-下一阶段暂不改原始收藏目录。更合适的方向是给 Jellyfin 提供一层独立的“规范视图”，让 Jellyfin 看到明确、稳定的文件名，例如：
+在《金牌得主》单文件实验后，又选择《描绘直至生命尽头》S01E02 做跨作品验证。
 
-```text
-S02E02 - <原文件名>.mkv
-S02E03 - <原文件名>.mkv
-...
-S02E09 - <原文件名>.mkv
+最初的 `14-cross-series-canonical-hardlink-pilot.ps1` 使用 PowerShell：
+
+```powershell
+New-Item -ItemType HardLink
 ```
 
-原始字幕组文件名和年度/季度归档结构可以保持不动。规范视图可考虑通过同盘硬链接等方式建立，并同步生成同 basename 的 NFO。
+结果在带 `[02]` 的字幕组路径上失败。随后 `15-hardlink-path-probe.ps1` 证明：
 
-在真正批量实现前，还应注意两类边界：
+- `Test-Path -LiteralPath` 可以看到 source；
+- 普通 `-Path` 会把 `[]` 当 wildcard；
+- PowerShell hardlink provider 报 source 不存在；
+- native `CreateHardLinkW` 可以成功创建同一条 hardlink。
 
-- 同一 S/E 的合法多版本不能被错误拆散；
-- alternate group 中存在 correction target 之外的未知成员时，不能按已知目标盲目重建。
+因此正式实验改为 `16-cross-series-canonical-native-hardlink-pilot.ps1`。
 
-因此下一阶段脚本应以“生成/维护 Jellyfin 专用规范视图”为核心，而不是继续扩大数据库直接修复。
+跨作品 Apply 最终得到：
+
+```text
+Target normally visible: True
+Target expanded visible: True
+Target current key:      S01E02
+Target media-source count: 1
+Visible through Series:  True
+RESULT: CANONICAL HARDLINK STAYS INDEPENDENT
+Cleanup status: RESTORED
+```
+
+这说明“显式 `SxxEyy` + hardlink 规范视图”的效果不仅存在于《金牌得主》单一案例中，而且不需要修改原始视频文件名。
+
+脱敏结果：
+
+```text
+results/16-hardlink-path-probe-powershell-provider.txt
+results/17-cross-series-canonical-native-hardlink-success.txt
+```
+
+## 2026-08-13：243-target 规范视图真实构建
+
+在单点验证结束后，正式脚本：
+
+```text
+scripts/build_jellyfin_canonical_view.ps1
+```
+
+以当前 `jellyfin_tv_nfo_run_log.csv` 中 243 个 correction targets 为输入进行全量 preflight。
+
+期间实际暴露并修正了两个正式构建边界：
+
+1. Windows PowerShell 5.1 / .NET Framework 的 `Path.GetPathRoot()` 会在部分超长字幕组路径上触发传统 `MAX_PATH` 异常，因此正式脚本不再用它解析卷根，并对 hardlink / copy / directory 等关键文件操作使用 native Windows API；
+2. Jellyfin `/Library/VirtualFolders` 的 PowerShell 返回值曾被错误当作单个对象，导致多个 library name 被拼成一个字符串；修正为显式展开后，243 个 target 均能映射到正确的独立媒体库路径。
+
+最终真实 Apply：
+
+```text
+planned targets = 243
+preflight failures = 0
+canonical videos ready = 243
+canonical NFOs ready = 243
+videos created = 243
+videos reused = 0
+NFOs created = 243
+NFOs reused = 0
+source media modified = 0
+source media moved = 0
+unmanaged target overwritten = 0
+manifest ready = true
+build log ready = true
+```
+
+随后再次 dry-run：
+
+```text
+Existing manifest rows: 243
+Planned targets:      243
+Preflight failures:   0
+Videos reusable:      243
+Videos to create:     0
+NFOs reusable:        243
+NFOs to create:       0
+```
+
+因此第一版 243-target canonical View 的**构建与幂等复用行为已经完成真实环境验证**。
+
+当前规范目录为：
+
+```text
+D:\Resource\BangumiLink\
+├─ View\
+├─ Temp\
+└─ Logs\
+```
+
+详细操作与 manifest / rollback 说明见：
+
+```text
+docs/canonical-view.md
+```
+
+## 当前阶段边界
+
+这次成功并不意味着现在就可以把主 Jellyfin TV 库直接切到 `View`。
+
+第一版 View 只包含 243 个 correction targets，而不是完整 TV 库：
+
+- 只扫描 View，会让其余正常动画消失；
+- 同时扫描原始路径和 View，会让这 243 个目标重复出现。
+
+因此，**243-target View 是规范视图生成器第一阶段的最终产物，不是最终切库产物。**
+
+下一阶段如果继续，应构建完整 TV 规范镜像：正常文件透传 hardlink，已知 correction targets 使用 canonical `SxxEyy` 名称，同时保留合法同集多版本和必要 sidecar。等完整 View 足以替代原 TV 库后，再单独设计 Jellyfin 的最终切换步骤。
