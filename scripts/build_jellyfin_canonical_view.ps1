@@ -69,10 +69,10 @@ function Get-CvContainingLibrary {
         try {
             $relative = Get-CvRelativeDirectory -SourceDirectory $sourceDirectory -LibraryRoot $location.Root
             $matches += [pscustomobject]@{
-                LibraryName      = $location.LibraryName
-                Root             = $location.Root
+                LibraryName       = $location.LibraryName
+                Root              = $location.Root
                 RelativeDirectory = $relative
-                RootLength       = ([System.IO.Path]::GetFullPath($location.Root)).Length
+                RootLength        = ([System.IO.Path]::GetFullPath($location.Root)).Length
             }
         }
         catch {
@@ -84,7 +84,12 @@ function Get-CvContainingLibrary {
         throw "Video does not belong to any Jellyfin library location: $VideoPath"
     }
 
-    $ordered = @($matches | Sort-Object RootLength -Descending, LibraryName, Root)
+    $sortProperties = @(
+        @{ Expression = { $_.RootLength }; Descending = $true },
+        @{ Expression = { $_.LibraryName }; Descending = $false },
+        @{ Expression = { $_.Root }; Descending = $false }
+    )
+    $ordered = @($matches | Sort-Object -Property $sortProperties)
     $bestLength = [int]$ordered[0].RootLength
     $best = @($ordered | Where-Object { [int]$_.RootLength -eq $bestLength })
 
