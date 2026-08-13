@@ -41,13 +41,27 @@ function Get-TvaTvLibraries {
     return @($result | Sort-Object Name)
 }
 
+function Get-TvaPathExtension {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return "" }
+
+    $lastSlash = [Math]::Max($Path.LastIndexOf('\'), $Path.LastIndexOf('/'))
+    $lastDot = $Path.LastIndexOf('.')
+    if ($lastDot -lt 0 -or $lastDot -le $lastSlash -or $lastDot -eq ($Path.Length - 1)) {
+        return ""
+    }
+
+    return $Path.Substring($lastDot).ToLowerInvariant()
+}
+
 function Test-TvaVideoExtension {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    $extension = [System.IO.Path]::GetExtension($Path)
+    $extension = Get-TvaPathExtension -Path $Path
     if ([string]::IsNullOrWhiteSpace($extension)) { return $false }
 
-    return @(".mkv", ".mp4", ".m4v", ".avi", ".ts", ".webm") -contains $extension.ToLowerInvariant()
+    return @(".mkv", ".mp4", ".m4v", ".avi", ".ts", ".webm") -contains $extension
 }
 
 function Initialize-TvaNativeFileSystem {
@@ -308,10 +322,11 @@ function Get-TvaVideoFiles {
 
     $result = @()
     foreach ($entry in @([TvaNativeFileSystem]::EnumerateFilesRecursive($LibraryRoot))) {
-        if (-not (Test-TvaVideoExtension -Path ([string]$entry.Path))) { continue }
+        $entryPath = [string]$entry.Path
+        if (-not (Test-TvaVideoExtension -Path $entryPath)) { continue }
 
-        $extension = [System.IO.Path]::GetExtension([string]$entry.Path)
-        $nfoPath = ([string]$entry.Path).Substring(0, ([string]$entry.Path).Length - $extension.Length) + ".nfo"
+        $extension = Get-TvaPathExtension -Path $entryPath
+        $nfoPath = $entryPath.Substring(0, $entryPath.Length - $extension.Length) + ".nfo"
         $nfoExists = [TvaNativeFileSystem]::FileExists($nfoPath)
         $nfoSummary = $null
         $nfoError = ""
@@ -326,16 +341,16 @@ function Get-TvaVideoFiles {
         }
 
         $result += [pscustomobject]@{
-            LibraryName      = $LibraryName
-            LibraryRoot      = $LibraryRoot
-            Path             = [string]$entry.Path
-            Extension        = $extension.ToLowerInvariant()
-            Length           = [long]$entry.Length
-            LastWriteTime    = ([datetime]$entry.LastWriteTimeUtc).ToLocalTime().ToString("o")
-            SameNameNfoPath  = $nfoPath
+            LibraryName       = $LibraryName
+            LibraryRoot       = $LibraryRoot
+            Path              = $entryPath
+            Extension         = $extension
+            Length            = [long]$entry.Length
+            LastWriteTime     = ([datetime]$entry.LastWriteTimeUtc).ToLocalTime().ToString("o")
+            SameNameNfoPath   = $nfoPath
             SameNameNfoExists = [bool]$nfoExists
-            NfoSummary       = $nfoSummary
-            NfoReadError     = $nfoError
+            NfoSummary        = $nfoSummary
+            NfoReadError      = $nfoError
         }
     }
 
