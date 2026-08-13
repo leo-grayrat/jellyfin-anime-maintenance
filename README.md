@@ -46,7 +46,17 @@ docs/canonical-view.md
 
 **注意：当前 View 只包含 243 个修正目标，还不能直接替换完整 Jellyfin TV 库，也不应与原始 TV 根目录同时挂进主媒体库。**
 
-如果想快速（让 AI）核查本地元数据，可以查看 `docs/library-export.md` ！
+### TV 动画统一审计导出
+
+在继续修 metadata 之前，可以把 TV 库的结构、Provider 配置、正常/隐藏 Episode、实际视频文件和同名 NFO 一次性导出：
+
+```powershell
+.\scripts\export_jellyfin_tv_audit_12.ps1 -ApiKey "<API_KEY>"
+```
+
+该脚本只读 Jellyfin 和 TV 文件目录，不处理剧场版，也不会 Refresh、Identify、修改 NFO 或数据库。详细字段和安全边界见 `docs/library-export.md`。
+
+如果只想快速（让 AI）核查一般 Jellyfin 元数据，也可以继续使用 `docs/library-export.md` 中的通用导出脚本。
 
 Jellyfin 12 NFO 刷新调查的脚本版本、运行结果和结论存档见 `docs/history/2026-08-11-jellyfin12-nfo-refresh.md`。
 
@@ -54,7 +64,7 @@ Jellyfin 12 NFO 刷新调查的脚本版本、运行结果和结论存档见 `do
 
 ## 目录
 
-- `scripts/`：正式 NFO / Jellyfin / canonical view 维护脚本
+- `scripts/`：正式 NFO / Jellyfin / canonical view / audit 维护脚本
 - `rules/`：当前动画命名纠错规则
 - `reports/`：每次核查的汇总说明
 - `samples/`：最小 NFO 示例
