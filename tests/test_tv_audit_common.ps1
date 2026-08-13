@@ -60,6 +60,10 @@ Assert-Equal $tv[0].Name "TV A" "first TV library"
 Assert-Equal $tv[1].Locations.Count 2 "multi-root TV library"
 Assert-Equal $tv[0].LibraryOptions.EnableInternetProviders $false "library options preserved"
 
+$wrappedTv = @(Get-TvaTvLibraries -VirtualFolders ([pscustomobject]@{ value = $folders }))
+Assert-Equal $wrappedTv.Count 2 "wrapped tv library count"
+Assert-Equal $wrappedTv[1].Name "TV B" "wrapped tv library order"
+
 Assert-Equal (Test-TvaVideoExtension -Path "x.mkv") $true "mkv accepted"
 Assert-Equal (Test-TvaVideoExtension -Path "x.MP4") $true "case-insensitive mp4 accepted"
 Assert-Equal (Test-TvaVideoExtension -Path "x.m4v") $true "m4v accepted"
@@ -110,13 +114,33 @@ try {
     $subtitlePath = Join-Path $mediaDir "sample[02].ass"
     "x" | Set-Content -LiteralPath $subtitlePath -Encoding ASCII
 
+    $badVideoPath = Join-Path $mediaDir "sample[03].mp4"
+    [System.IO.File]::WriteAllBytes($badVideoPath, [byte[]](5, 6, 7))
+    $badNfoPath = Join-Path $mediaDir "sample[03].nfo"
+    "<episodedetails><season>1" | Set-Content -LiteralPath $badNfoPath -Encoding UTF8
+
+    $noNfoVideoPath = Join-Path $mediaDir "sample[04].webm"
+    [System.IO.File]::WriteAllBytes($noNfoVideoPath, [byte[]](8, 9))
+
     $files = @(Get-TvaVideoFiles -LibraryName "Test TV" -LibraryRoot $tempRoot)
-    Assert-Equal $files.Count 1 "video inventory count"
-    Assert-Equal $files[0].LibraryName "Test TV" "inventory library name"
-    Assert-Equal $files[0].Length 4 "video length"
-    Assert-Equal $files[0].SameNameNfoExists $true "same-name NFO found"
-    Assert-Equal $files[0].NfoSummary.Episode 2 "inventory NFO episode"
-    Assert-Equal $files[0].NfoReadError "" "inventory NFO read error"
+    Assert-Equal $files.Count 3 "video inventory count"
+
+    $good = $files | Where-Object { $_.Path -eq $videoPath }
+    Assert-Equal $good.LibraryName "Test TV" "inventory library name"
+    Assert-Equal $good.Length 4 "video length"
+    Assert-Equal $good.SameNameNfoExists $true "same-name NFO found"
+    Assert-Equal $good.NfoSummary.Episode 2 "inventory NFO episode"
+    Assert-Equal $good.NfoReadError "" "inventory NFO read error"
+
+    $bad = $files | Where-Object { $_.Path -eq $badVideoPath }
+    Assert-Equal $bad.SameNameNfoExists $true "bad NFO exists"
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$bad.NfoReadError)) "bad NFO error captured"
+    Assert-Equal $bad.NfoSummary $null "bad NFO summary omitted"
+
+    $withoutNfo = $files | Where-Object { $_.Path -eq $noNfoVideoPath }
+    Assert-Equal $withoutNfo.SameNameNfoExists $false "missing NFO reported"
+    Assert-Equal $withoutNfo.NfoSummary $null "missing NFO summary omitted"
+    Assert-Equal $withoutNfo.NfoReadError "" "missing NFO is not an error"
 }
 finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
