@@ -67,20 +67,15 @@ function Get-TvaPagedItems {
         "Path",
         "ProviderIds",
         "Overview",
-        "PremiereDate",
         "DateCreated",
         "OriginalTitle",
         "SortName",
-        "ProductionYear",
         "MediaSources",
         "MediaSourceCount",
-        "SeriesId",
-        "SeriesName",
-        "SeasonId",
-        "SeasonName",
         "ParentId",
-        "ImageTags",
-        "BackdropImageTags"
+        "DateLastRefreshed",
+        "DateLastSaved",
+        "RefreshState"
     ) -join ","
 
     do {
@@ -180,6 +175,12 @@ $tvLibraries = @(Get-TvaTvLibraries -VirtualFolders $virtualFolders)
 
 if ($tvLibraries.Count -eq 0) {
     throw "No tvshows libraries found."
+}
+
+foreach ($library in $tvLibraries) {
+    if ([string]$library.CollectionType -ne "tvshows") {
+        throw "Non-TV library escaped TV-only filtering."
+    }
 }
 
 Write-Host ("Server version: {0}" -f [string]$systemInfo.Version)
