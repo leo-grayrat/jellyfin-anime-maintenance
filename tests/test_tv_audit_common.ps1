@@ -72,6 +72,10 @@ Assert-Equal (Test-TvaVideoExtension -Path "x.ts") $true "ts accepted"
 Assert-Equal (Test-TvaVideoExtension -Path "x.webm") $true "webm accepted"
 Assert-Equal (Test-TvaVideoExtension -Path "x.ass") $false "subtitle rejected"
 
+$longVideoPath = "D:\" + "x".PadLeft(280, 'x') + ".MKV"
+Assert-True ($longVideoPath.Length -gt 260) "long path fixture"
+Assert-Equal (Test-TvaVideoExtension -Path $longVideoPath) $true "long mkv path accepted"
+
 $tempRoot = Join-Path $env:TEMP ("tva-test-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 
