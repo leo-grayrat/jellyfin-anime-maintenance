@@ -1,0 +1,21 @@
+name: TV audit branch tests
+
+on:
+  push:
+    branches:
+      - feat/tv-audit-export
+
+jobs:
+  windows-powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Canonical view tests
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test_canonical_view_common.ps1
+      - name: TV audit tests
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test_tv_audit_common.ps1
+      - name: Windows PowerShell compatibility
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\check_windows_powershell_compat.ps1
