@@ -1,5 +1,69 @@
 $ErrorActionPreference = "Stop"
 
+function Get-FcvNativePathText {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "Path must not be empty."
+    }
+
+    $normalized = $Path.Trim().Replace('/', '\')
+    if ($normalized.StartsWith('\\?\UNC\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $normalized = '\\' + $normalized.Substring(8)
+    }
+    elseif ($normalized.StartsWith('\\?\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $normalized = $normalized.Substring(4)
+    }
+
+    if ($normalized -notmatch '^([A-Za-z]:\|\\[^\]+\[^\]+(?:\|$))') {
+        throw "Expected an absolute Windows path: $Path"
+    }
+
+    foreach ($segment in @($normalized -split '\')) {
+        if ($segment -eq '.' -or $segment -eq '..') {
+            throw "Path must already be normalized and may not contain dot segments: $Path"
+        }
+    }
+
+    return $normalized
+}
+
+function Get-FcvDirectoryPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $normalized = Get-FcvNativePathText -Path $Path
+    $lastSeparator = $normalized.LastIndexOf('\')
+    if ($lastSeparator -lt 0) {
+        throw "Path has no directory separator: $Path"
+    }
+    if ($lastSeparator -eq 2 -and $normalized.Length -ge 3 -and $normalized[1] -eq ':') {
+        return $normalized.Substring(0, 3)
+    }
+    return $normalized.Substring(0, $lastSeparator)
+}
+
+function Get-FcvFileNameText {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $normalized = $Path.Replace('/', '\')
+    $lastSeparator = $normalized.LastIndexOf('\')
+    if ($lastSeparator -lt 0) { return $normalized }
+    if ($lastSeparator -eq ($normalized.Length - 1)) { return "" }
+    return $normalized.Substring($lastSeparator + 1)
+}
+
+function Join-FcvPathText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Left,
+        [Parameter(Mandatory = $true)][string]$Right
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Right)) {
+        return $Left.TrimEnd([char[]]@('\', '/'))
+    }
+    return $Left.TrimEnd([char[]]@('\', '/')) + '\' + $Right.TrimStart([char[]]@('\', '/'))
+}
+
 function Get-FcvPathExtension {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -14,14 +78,16 @@ function Get-FcvPathExtension {
 
 function Test-FcvVideoPath {
     param([Parameter(Mandatory = $true)][string]$Path)
-
     return Test-TvaVideoExtension -Path $Path
 }
 
 function Get-FcvFileStem {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    return [System.IO.Path]::GetFileNameWithoutExtension($Path)
+    $name = Get-FcvFileNameText -Path $Path
+    $lastDot = $name.LastIndexOf('.')
+    if ($lastDot -le 0) { return $name }
+    return $name.Substring(0, $lastDot)
 }
 
 function Test-FcvPathUnderOrEqual {
@@ -55,6 +121,145 @@ function Assert-FcvDisjointRoots {
     }
 }
 
+function Test-FcvNativeFile {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-CvNativeHardLink
+    return [CvNativeFileSystem]::FileExists((Get-FcvNativePathText -Path $Path))
+}
+
+function Test-FcvNativeDirectory {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-CvNativeHardLink
+    return [CvNativeFileSystem]::DirectoryExists((Get-FcvNativePathText -Path $Path))
+}
+
+function Get-FcvNativeFileLength {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-CvNativeHardLink
+    return [long][CvNativeFileSystem]::GetLength((Get-FcvNativePathText -Path $Path))
+}
+
+function New-FcvNativeDirectory {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-CvNativeHardLink
+    [CvNativeFileSystem]::CreateDirectoryOne((Get-FcvNativePathText -Path $Path))
+}
+
+function New-FcvNativeDirectoryTree {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $rawPath = Get-FcvNativePathText -Path $Path
+    $root = Get-CvVolumeRoot -Path $rawPath
+    $fullPath = $rawPath.TrimEnd([char[]]@('\', '/'))
+    $rootTrimmed = $root.TrimEnd([char[]]@('\', '/'))
+    if ([string]::Equals($fullPath, $rootTrimmed, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return @()
+    }
+    if (-not $fullPath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Directory path is outside its parsed volume root: $fullPath"
+    }
+
+    $relative = $fullPath.Substring($root.Length).TrimStart([char[]]@('\', '/'))
+    if ([string]::IsNullOrWhiteSpace($relative)) { return @() }
+
+    $current = $rootTrimmed
+    $created = New-Object System.Collections.ArrayList
+    foreach ($segment in @($relative -split '\')) {
+        if ([string]::IsNullOrWhiteSpace($segment)) { continue }
+        $current = Join-FcvPathText -Left $current -Right $segment
+        if (-not (Test-FcvNativeDirectory -Path $current)) {
+            New-FcvNativeDirectory -Path $current
+            [void]$created.Add($current)
+        }
+    }
+    return @($created)
+}
+
+function New-FcvNativeHardLink {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Target
+    )
+
+    $newPath = Get-FcvNativePathText -Path $Path
+    $existingPath = Get-FcvNativePathText -Path $Target
+    if (-not (Test-FcvNativeFile -Path $existingPath)) {
+        throw "Hardlink source does not exist: $existingPath"
+    }
+    if (Test-FcvNativeFile -Path $newPath) {
+        throw "Hardlink destination already exists: $newPath"
+    }
+
+    $parent = Get-FcvDirectoryPath -Path $newPath
+    if (-not (Test-FcvNativeDirectory -Path $parent)) {
+        throw "Hardlink destination directory does not exist: $parent"
+    }
+    if ((Get-CvVolumeRoot -Path $existingPath) -ne (Get-CvVolumeRoot -Path $newPath)) {
+        throw "Hardlink source and destination are on different volumes."
+    }
+
+    Initialize-CvNativeHardLink
+    [CvNativeFileSystem]::CreateHardLink($newPath, $existingPath)
+    if (-not (Test-FcvNativeFile -Path $newPath)) {
+        throw "CreateHardLinkW returned success but destination is not visible: $newPath"
+    }
+    if ((Get-FcvNativeFileLength -Path $newPath) -ne (Get-FcvNativeFileLength -Path $existingPath)) {
+        throw "Hardlink length mismatch: $newPath"
+    }
+}
+
+function Copy-FcvNativeFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    $sourcePath = Get-FcvNativePathText -Path $Source
+    $destinationPath = Get-FcvNativePathText -Path $Destination
+    if (-not (Test-FcvNativeFile -Path $sourcePath)) {
+        throw "Copy source does not exist: $sourcePath"
+    }
+    if (Test-FcvNativeFile -Path $destinationPath) {
+        throw "Copy destination already exists: $destinationPath"
+    }
+
+    Initialize-CvNativeHardLink
+    [CvNativeFileSystem]::CopyFile($sourcePath, $destinationPath, $false)
+    if (-not (Test-FcvNativeFile -Path $destinationPath)) {
+        throw "Native copy returned success but destination is not visible: $destinationPath"
+    }
+}
+
+function Remove-FcvNativeFile {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-CvNativeHardLink
+    [CvNativeFileSystem]::DeleteFileIfExists((Get-FcvNativePathText -Path $Path))
+}
+
+function Remove-FcvNativeDirectoryIfEmpty {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-CvNativeHardLink
+    return [bool][CvNativeFileSystem]::RemoveDirectoryIfEmpty((Get-FcvNativePathText -Path $Path))
+}
+
+function Move-FcvNativeFileReplace {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    Initialize-CvNativeHardLink
+    [CvNativeFileSystem]::MoveReplace(
+        (Get-FcvNativePathText -Path $Source),
+        (Get-FcvNativePathText -Path $Destination))
+}
+
 function Get-FcvSourceFiles {
     param(
         [Parameter(Mandatory = $true)][string]$LibraryName,
@@ -62,11 +267,12 @@ function Get-FcvSourceFiles {
     )
 
     Initialize-TvaNativeFileSystem
+    $root = Get-FcvNativePathText -Path $LibraryRoot
     $result = @()
-    foreach ($entry in @([TvaNativeFileSystem]::EnumerateFilesRecursive($LibraryRoot))) {
+    foreach ($entry in @([TvaNativeFileSystem]::EnumerateFilesRecursive($root))) {
         $result += [pscustomobject]@{
             LibraryName = $LibraryName
-            LibraryRoot = $LibraryRoot
+            LibraryRoot = $root
             Path = [string]$entry.Path
             Length = [long]$entry.Length
             LastWriteTimeUtc = [datetime]$entry.LastWriteTimeUtc
@@ -101,15 +307,14 @@ function Get-FcvTargetForSidecar {
 
     if (Test-FcvVideoPath -Path $Path) { return $null }
 
-    $sidecarDirectory = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($Path))
+    $sidecarDirectory = Get-FcvDirectoryPath -Path $Path
     $sidecarStem = Get-FcvFileStem -Path $Path
     $matches = @()
 
     foreach ($target in @($Targets)) {
-        $targetPath = [System.IO.Path]::GetFullPath([string]$target.VideoPath)
-        $targetDirectory = [System.IO.Path]::GetDirectoryName($targetPath)
+        $targetPath = Get-FcvNativePathText -Path ([string]$target.VideoPath)
+        $targetDirectory = Get-FcvDirectoryPath -Path $targetPath
         $targetStem = Get-FcvFileStem -Path $targetPath
-
         if ([string]::Equals($sidecarDirectory, $targetDirectory, [System.StringComparison]::OrdinalIgnoreCase) -and
             [string]::Equals($sidecarStem, $targetStem, [System.StringComparison]::OrdinalIgnoreCase)) {
             $matches += $target
@@ -119,9 +324,7 @@ function Get-FcvTargetForSidecar {
     if ($matches.Count -gt 1) {
         throw "Sidecar matches multiple correction targets: $Path"
     }
-    if ($matches.Count -eq 1) {
-        return $matches[0]
-    }
+    if ($matches.Count -eq 1) { return $matches[0] }
     return $null
 }
 
@@ -132,7 +335,6 @@ function Get-FcvOperation {
     )
 
     if ($IsVideo) { return "HARDLINK" }
-
     $extension = Get-FcvPathExtension -Path $Path
     if (@('.ass', '.ssa', '.srt', '.vtt', '.sub', '.idx') -contains $extension) {
         return "HARDLINK"
@@ -146,11 +348,8 @@ function Get-FcvRelativeFilePath {
         [Parameter(Mandatory = $true)][string]$Root
     )
 
-    $fullPath = [System.IO.Path]::GetFullPath($Path)
-    $fullRoot = ([System.IO.Path]::GetFullPath($Root)).TrimEnd([char[]]@('\', '/'))
-    if ([string]::Equals($fullPath, $fullRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Source file path cannot equal its library root: $fullPath"
-    }
+    $fullPath = Get-FcvNativePathText -Path $Path
+    $fullRoot = (Get-FcvNativePathText -Path $Root).TrimEnd([char[]]@('\', '/'))
     $prefix = $fullRoot + '\'
     if (-not $fullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Source file is outside library root: source=$fullPath root=$fullRoot"
@@ -173,18 +372,20 @@ function Get-FcvCanonicalPath {
     }
 
     $relative = Get-FcvRelativeFilePath -Path $SourcePath -Root $LibraryRoot
-    $relativeDirectory = [System.IO.Path]::GetDirectoryName($relative)
-    $sourceName = [System.IO.Path]::GetFileName($SourcePath)
+    $lastSeparator = $relative.LastIndexOf('\')
+    $relativeDirectory = ""
+    if ($lastSeparator -ge 0) { $relativeDirectory = $relative.Substring(0, $lastSeparator) }
+    $sourceName = Get-FcvFileNameText -Path $SourcePath
     $targetName = $sourceName
     if (-not [string]::IsNullOrWhiteSpace($ExpectedKey)) {
         $targetName = "$ExpectedKey - $sourceName"
     }
 
-    $directory = [System.IO.Path]::Combine([System.IO.Path]::GetFullPath($ViewRoot), $LibraryName)
+    $directory = Join-FcvPathText -Left (Get-FcvNativePathText -Path $ViewRoot) -Right $LibraryName
     if (-not [string]::IsNullOrWhiteSpace($relativeDirectory)) {
-        $directory = [System.IO.Path]::Combine($directory, $relativeDirectory)
+        $directory = Join-FcvPathText -Left $directory -Right $relativeDirectory
     }
-    return [System.IO.Path]::Combine($directory, $targetName)
+    return Join-FcvPathText -Left $directory -Right $targetName
 }
 
 function New-FcvPlan {
@@ -198,13 +399,9 @@ function New-FcvPlan {
     $sourceIndex = @{}
     foreach ($source in @($SourceFiles)) {
         $sourcePath = [string]$source.Path
-        if ([string]::IsNullOrWhiteSpace($sourcePath)) {
-            throw "Source file row is missing Path."
-        }
+        if ([string]::IsNullOrWhiteSpace($sourcePath)) { throw "Source file row is missing Path." }
         $sourceKey = Get-CvPathKey -Path $sourcePath
-        if ($sourceIndex.ContainsKey($sourceKey)) {
-            throw "Duplicate source file path in inventory: $sourcePath"
-        }
+        if ($sourceIndex.ContainsKey($sourceKey)) { throw "Duplicate source file path in inventory: $sourcePath" }
         $sourceIndex[$sourceKey] = $source
     }
 
@@ -220,12 +417,10 @@ function New-FcvPlan {
 
     $plan = @()
     $canonicalOwners = @{}
-
     foreach ($source in @($SourceFiles | Sort-Object Path)) {
         $sourcePath = [string]$source.Path
         $sourceKey = Get-CvPathKey -Path $sourcePath
         $isVideo = [bool](Test-FcvVideoPath -Path $sourcePath)
-        $target = $null
         $role = ""
         $expectedKey = ""
 
@@ -243,21 +438,10 @@ function New-FcvPlan {
         }
 
         if ([string]::IsNullOrWhiteSpace($role)) {
-            if ($isVideo) {
-                $role = "PASSTHROUGH_VIDEO"
-            }
-            else {
-                $role = "PASSTHROUGH_FILE"
-            }
+            if ($isVideo) { $role = "PASSTHROUGH_VIDEO" } else { $role = "PASSTHROUGH_FILE" }
         }
 
-        $canonicalPath = Get-FcvCanonicalPath `
-            -ViewRoot $ViewRoot `
-            -LibraryName ([string]$source.LibraryName) `
-            -LibraryRoot ([string]$source.LibraryRoot) `
-            -SourcePath $sourcePath `
-            -ExpectedKey $expectedKey
-
+        $canonicalPath = Get-FcvCanonicalPath -ViewRoot $ViewRoot -LibraryName ([string]$source.LibraryName) -LibraryRoot ([string]$source.LibraryRoot) -SourcePath $sourcePath -ExpectedKey $expectedKey
         $canonicalKey = Get-CvPathKey -Path $canonicalPath
         if ($canonicalOwners.ContainsKey($canonicalKey)) {
             throw "Canonical path collision: $canonicalPath :: source1=$($canonicalOwners[$canonicalKey]) source2=$sourcePath"
@@ -277,7 +461,6 @@ function New-FcvPlan {
             State = "UNCLASSIFIED"
         }
     }
-
     return @($plan)
 }
 
@@ -287,13 +470,9 @@ function Get-FcvManifestIndex {
     $index = @{}
     foreach ($row in @($Rows)) {
         $path = [string]$row.CanonicalPath
-        if ([string]::IsNullOrWhiteSpace($path)) {
-            throw "Full manifest row is missing CanonicalPath."
-        }
+        if ([string]::IsNullOrWhiteSpace($path)) { throw "Full manifest row is missing CanonicalPath." }
         $key = Get-CvPathKey -Path $path
-        if ($index.ContainsKey($key)) {
-            throw "Duplicate CanonicalPath in full manifest: $path"
-        }
+        if ($index.ContainsKey($key)) { throw "Duplicate CanonicalPath in full manifest: $path" }
         $index[$key] = $row
     }
     return $index
@@ -307,52 +486,38 @@ function Test-FcvExistingTarget {
         [Parameter(Mandatory = $true)]$ManifestIndex
     )
 
-    if (-not (Test-CvNativeFile -Path $TargetPath)) {
+    if (-not (Test-FcvNativeFile -Path $TargetPath)) {
         return [pscustomobject]@{ State = "MISSING"; Reason = "target does not exist" }
     }
-
     $targetKey = Get-CvPathKey -Path $TargetPath
     if (-not $ManifestIndex.ContainsKey($targetKey)) {
         return [pscustomobject]@{ State = "CONFLICT"; Reason = "target exists but is not full-manifest-managed" }
     }
-
     $row = $ManifestIndex[$targetKey]
     if ((Get-CvPathKey -Path ([string]$row.SourcePath)) -ne (Get-CvPathKey -Path $SourcePath)) {
         return [pscustomobject]@{ State = "CONFLICT"; Reason = "manifest source does not match current source" }
     }
-
-    $actualLength = Get-CvNativeFileLength -Path $TargetPath
+    $actualLength = Get-FcvNativeFileLength -Path $TargetPath
     if ([long]$actualLength -ne [long]$ExpectedLength) {
         return [pscustomobject]@{ State = "CONFLICT"; Reason = "target length does not match source length" }
     }
-
     return [pscustomobject]@{ State = "REUSABLE"; Reason = "full-manifest-managed same source" }
 }
 
 function Merge-FcvManifestRows {
-    param(
-        [object[]]$ExistingRows = @(),
-        [object[]]$NewRows = @()
-    )
+    param([object[]]$ExistingRows = @(), [object[]]$NewRows = @())
 
     $byCanonical = @{}
     foreach ($row in @($ExistingRows)) {
         $path = [string]$row.CanonicalPath
-        if ([string]::IsNullOrWhiteSpace($path)) {
-            throw "Existing full manifest row is missing CanonicalPath."
-        }
+        if ([string]::IsNullOrWhiteSpace($path)) { throw "Existing full manifest row is missing CanonicalPath." }
         $key = Get-CvPathKey -Path $path
-        if ($byCanonical.ContainsKey($key)) {
-            throw "Duplicate CanonicalPath in existing full manifest: $path"
-        }
+        if ($byCanonical.ContainsKey($key)) { throw "Duplicate CanonicalPath in existing full manifest: $path" }
         $byCanonical[$key] = $row
     }
-
     foreach ($row in @($NewRows)) {
         $path = [string]$row.CanonicalPath
-        if ([string]::IsNullOrWhiteSpace($path)) {
-            throw "New full manifest row is missing CanonicalPath."
-        }
+        if ([string]::IsNullOrWhiteSpace($path)) { throw "New full manifest row is missing CanonicalPath." }
         $key = Get-CvPathKey -Path $path
         if ($byCanonical.ContainsKey($key)) {
             $existing = $byCanonical[$key]
@@ -362,7 +527,6 @@ function Merge-FcvManifestRows {
         }
         $byCanonical[$key] = $row
     }
-
     return @($byCanonical.Values | Sort-Object CanonicalPath)
 }
 
