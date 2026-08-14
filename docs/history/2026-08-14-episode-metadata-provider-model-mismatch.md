@@ -86,7 +86,71 @@ S03E07
 
 返回空同样不能归因为 Jellyfin provider bug。
 
-## 3. 最终结论
+## 3. TVDB / IMDb 对照核验
+
+继续核对外部数据库后，TVDB 和 IMDb 明显更贴合本地希望展示的季数模型。
+
+### Frieren
+
+TheTVDB 把《葬送のフリーレン》作为同一个 Series 管理，并明确存在：
+
+```text
+Season 1: 28 episodes
+Season 2: 10 episodes
+```
+
+其中第二季直接按：
+
+```text
+S02E01 ... S02E10
+```
+
+编号；S02E02、S02E06 等都存在正确标题、简介和播出日期。
+
+IMDb 也把 2026 内容放在原 `Frieren: Beyond Journey's End` Series 下的 Season 2，存在 S2.E1 到 S2.E10，并有独立 Episode title / plot / rating。
+
+因此 Frieren 的本地：
+
+```text
+S02E06
+```
+
+与 TVDB / IMDb 都天然同构，只与 TMDB 不同构。
+
+### Oshi no Ko
+
+TheTVDB 明确把《【推しの子】》2026 年内容作为 Season 3：
+
+```text
+S03E01 ... S03E11
+```
+
+且每集都已有标题、日期和简介；例如 S03E02、S03E03、S03E07 均能直接对应本地编号。
+
+IMDb 也明确存在 `Oshi No Ko` Season 3 Episode 2、Episode 3、Episode 11 等独立 Episode 条目，说明其季数模型同样与本地 S03 对齐。
+
+因此 Oshi no Ko 的本地 S03 同样更适合从 TVDB / IMDb 获取 metadata，而不是 TMDB。
+
+### Fate/strange Fake -Whispers of Dawn-
+
+TheTVDB 同时保留两种关系：
+
+- 它是一个独立 Movie / OVA / TV Movie 条目；
+- 同时又被链接为 `Fate/strange Fake` Series 的特殊集：`S00E01`，并标记为在 Season 1 Episode 1 之前播出的关键剧情特别篇。
+
+这与当前 Jellyfin 中希望把它显示成：
+
+```text
+特别篇 / S00E01
+```
+
+完全同构。
+
+IMDb 则主要把它作为独立 TV Movie `tt22264336` 管理，不适合作为 Series S00E01 的自动 Episode lookup source。
+
+因此 FSF 特别篇也是 TVDB 明显优于 TMDB / IMDb 的一个案例。
+
+## 4. 最终结论
 
 此前的“TmdbEpisodeProvider 在正确 Series/S-E 下错误返回 no metadata”上游候选被排除。
 
@@ -100,7 +164,15 @@ S03E07
 - Jellyfin 也可以正确调用 `TmdbEpisodeProvider`；
 - 但只要本地 `SxxEyy` 与 TMDB 的 `series_id + season_number + episode_number` 不同构，就无法依赖 TMDB provider 自动补齐 Episode metadata。
 
-## 4. 对当前 v3 的影响
+与此同时，当前三个代表性异常对象在 TVDB 中都与本地模型天然同构：
+
+- Frieren 第2季 -> TVDB Season 2；
+- Oshi no Ko 第3季 -> TVDB Season 3；
+- Fate/strange Fake -Whispers of Dawn- -> TVDB Series Special S00E01。
+
+IMDb 对 Frieren / Oshi no Ko 的季数也基本同构，但 FSF 特别篇主要按独立 TV Movie 管理。因此从“一个 source 尽量覆盖三种异常”角度看，TVDB 是目前最合适的候选。
+
+## 5. 对当前 v3 的影响
 
 v3 文件结构本身仍然成立，不应因为 metadata source 的建模差异再造 v4。
 
@@ -111,10 +183,20 @@ v3 文件结构本身仍然成立，不应因为 metadata source 的建模差异
 
 后续 metadata 修复应把“本地展示编号”和“外部 provider 编号”分开处理。
 
-## 5. 主线后续方向
+## 6. 主线后续方向
 
-不再继续追候选 2 的 Jellyfin bug，也不继续修改 View 文件结构。
+优先验证 TVDB 是否能直接成为这些 mismatch 作品的 Episode metadata source，而不是继续维护 TMDB S/E 映射。
 
-下一步应比较可用 metadata source（TMDB / TVDB / IMDb/OMDb 等）对这些动画的建模方式，选择能稳定映射到本地季数的一种；如果没有统一 source，则对少数 mismatch 作品生成明确的本地 Episode NFO，以保留本地希望展示的 Season 2 / Season 3，同时写入正确标题、简介和 provider IDs。
+理想状态：
 
-Fate/strange Fake `Whispers of Dawn` 也属于类似“本地希望作为特别篇显示、外部数据库却作为独立作品维护”的 source-model mismatch，应和上述问题一起按本地 metadata 特例思路处理。
+```text
+本地 S02E06 / S03E07 / S00E01
+        ↓
+TVDB 使用相同 S/E 模型
+        ↓
+Jellyfin 直接获取对应标题 / 简介 / Provider IDs
+```
+
+只有在 Jellyfin 当前 provider 链无法方便地以 TVDB 为主，或者部分作品缺少 TVDB 数据时，才退回“显式本地 Episode NFO + 小型外部编号映射表”。
+
+因此下一步不造新的 canonical View，也不改现有季集编号；只验证 Jellyfin 12 当前是否具备可用的 TVDB Episode metadata 获取路径，以及现有库/provider 配置如何选择或优先使用它。
