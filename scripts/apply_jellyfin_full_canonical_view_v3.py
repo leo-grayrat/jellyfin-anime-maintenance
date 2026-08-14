@@ -43,6 +43,7 @@ def build_preflight(args: argparse.Namespace) -> dict:
     temp_root = ntpath.join(root, "Temp")
     logs_root = ntpath.join(root, "Logs")
     full_manifest = ntpath.join(logs_root, "full-manifest-v3.csv")
+    no_phase1_manifest = ntpath.join(logs_root, "__v3-no-phase1-manifest__.csv")
 
     virtual_folders = inv.jellyfin_get(args.server, args.api_key, "/Library/VirtualFolders")
     exclusions = list(inv.DEFAULT_EXCLUDED_ROOTS) + [view_root] + list(args.exclude_root)
@@ -71,10 +72,12 @@ def build_preflight(args: argparse.Namespace) -> dict:
     plan = core.enrich_plan(files, mappings)
 
     # v3 is a fresh parallel View. It deliberately does not inherit the Phase 1/v2 manifest.
+    # Use a valid, intentionally absent path rather than an empty string because Windows
+    # long-path normalization rejects empty paths before os.path.isfile() can return False.
     classified, previous_full = core.preflight_plan(
         plan,
         view_root,
-        "",
+        no_phase1_manifest,
         full_manifest,
         args.expected_target_count,
     )
