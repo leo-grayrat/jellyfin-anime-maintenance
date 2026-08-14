@@ -6,6 +6,7 @@ import csv
 import json
 import ntpath
 import os
+import stat
 import sys
 import urllib.parse
 import urllib.request
@@ -28,7 +29,7 @@ def normalize_windows_path(path: str) -> str:
     if not value:
         raise ValueError("path must not be empty")
     if value.lower().startswith("\\\\?\\unc\\"):
-        value = "\\\\" + value[8:]
+        value = r"\\" + value[8:]
     elif value.startswith("\\\\?\\"):
         value = value[4:]
     return ntpath.normpath(value)
@@ -198,22 +199,18 @@ def select_production_locations(virtual_folders, excluded_roots: Sequence[str]) 
         name = str(library.get("Name", "")).strip()
         for raw_location in library.get("Locations") or []:
             location = normalize_windows_path(str(raw_location))
-            if any(
-                path_under_or_equal(location, excluded) or path_under_or_equal(excluded, location)
-                for excluded in exclusions
-            ):
+            if any(path_under_or_equal(location, excluded) for excluded in exclusions):
                 continue
+            containing = [excluded for excluded in exclusions if path_under_or_equal(excluded, location)]
+            if containing:
+                raise ValueError(
+                    f"tvshows location contains an excluded root: location={location} excluded={containing[0]}"
+                )
             key = (name.casefold(), path_key(location))
             if key in seen:
                 continue
             seen.add(key)
-            result.append(
-                {
-                    "library_name": name,
-                    "library_item_id": str(library.get("ItemId", "")),
-                    "root": location,
-                }
-            )
+            result.append({"library_name": name, "library_item_id": str(library.get("ItemId", "")), "root": location})
     result.sort(key=lambda x: (x["library_name"].casefold(), path_key(x["root"])))
     return result
 
@@ -239,14 +236,11 @@ def enumerate_files(locations: Sequence[dict]) -> list[dict]:
                     logical_path = ntpath.join(logical_dir, entry.name)
                     if entry.is_symlink():
                         continue
-                    is_junction = False
-                    if hasattr(os.path, "isjunction"):
-                        try:
-                            is_junction = bool(os.path.isjunction(entry.path))
-                        except OSError:
-                            is_junction = False
-                    if is_junction:
-                        continue
+                    entry_stat = entry.stat(follow_symlinks=False)
+                    if os.name == "nt":
+                        attributes = getattr(entry_stat, "st_file_attributes", 0)
+                        if attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+                            continue
                     if entry.is_dir(follow_symlinks=False):
                         stack.append((entry.path, logical_path))
                     elif entry.is_file(follow_symlinks=False):
@@ -259,18 +253,18 @@ def enumerate_files(locations: Sequence[dict]) -> list[dict]:
                                 "library_name": location["library_name"],
                                 "library_root": logical_root,
                                 "path": normalize_windows_path(logical_path),
-                                "size": entry.stat(follow_symlinks=False).st_size,
+                                "size": entry_stat.st_size,
                             }
                         )
     return sorted(result, key=lambda x: path_key(x["path"]))
 
 
 def jellyfin_get(server: str, api_key: str, path: str, query: dict | None = None):
-    url = server.rstrip("/") + "/" + path.lstrip("/")
+    base = server.rstrip("/") + "/" + path.lstrip("/")
     if query:
-        url += "?" + urllib.parse.urlencode(query)
+        base += "?" + urllib.parse.urlencode(query)
     request = urllib.request.Request(
-        url,
+        base,
         headers={
             "Authorization": (
                 'MediaBrowser Client="full-canonical-view-python", Device="Python", '
@@ -351,9 +345,7 @@ def print_inventory_report(locations: Sequence[dict], files: Sequence[dict], epi
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Read-only Python inventory/mapping for Jellyfin full canonical view"
-    )
+    parser = argparse.ArgumentParser(description="Read-only Python inventory/mapping for Jellyfin full canonical view")
     parser.add_argument("--api-key", required=True)
     parser.add_argument("--server", default="http://127.0.0.1:8096")
     parser.add_argument("--run-log", default="jellyfin_tv_nfo_run_log.csv")
@@ -370,7 +362,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     locations = select_production_locations(virtual_folders, exclusions)
     if not locations:
         raise RuntimeError("no production tvshows locations remain after exclusions")
-
     files = enumerate_files(locations)
     episode_paths = get_expanded_episode_paths(args.server, args.api_key, locations)
     print_inventory_report(locations, files, episode_paths)
