@@ -5,9 +5,6 @@ $scriptPaths = @(
     (Join-Path $PSScriptRoot "..\scripts\lib\canonical_view_common.ps1"),
     (Join-Path $PSScriptRoot "..\scripts\build_jellyfin_canonical_view.ps1"),
     (Join-Path $PSScriptRoot "..\scripts\lib\tv_audit_common.ps1"),
-    (Join-Path $PSScriptRoot "..\scripts\lib\full_canonical_view_common.ps1"),
-    (Join-Path $PSScriptRoot "..\scripts\lib\full_canonical_view_apply.ps1"),
-    (Join-Path $PSScriptRoot "..\scripts\build_jellyfin_full_canonical_view.ps1"),
     (Join-Path $PSScriptRoot "..\scripts\export_jellyfin_tv_audit_12.ps1"),
     (Join-Path $PSScriptRoot "..\scripts\analyze_jellyfin_tv_audit.ps1"),
     (Join-Path $PSScriptRoot "..\experiments\jellyfin12-nfo-refresh\17-medalist-e01-metadata-replace-pilot.ps1")
@@ -32,4 +29,4 @@ foreach ($scriptPath in $scriptPaths) {
     }
 }
 
-Write-Host "PASS: PowerShell scripts are ASCII-only and parse successfully."
+Write-Host "PASS: maintained PowerShell scripts are ASCII-only and parse successfully."
