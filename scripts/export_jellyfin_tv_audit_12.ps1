@@ -273,6 +273,22 @@ foreach ($root in $libraryRoots) {
     Write-Host ("    Video files: {0}" -f $files.Count)
 }
 
+$nfoFiles = @($filesystemVideos | Where-Object { [bool]$_.SameNameNfoExists })
+$nfoSummaries = @($nfoFiles | Where-Object { $null -ne $_.NfoSummary })
+$nfoReadErrors = @($nfoFiles | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.NfoReadError) })
+
+if ($nfoFiles.Count -gt 0 -and $nfoSummaries.Count -eq 0) {
+    $sampleError = ""
+    if ($nfoReadErrors.Count -gt 0) {
+        $sampleError = [string]$nfoReadErrors[0].NfoReadError
+    }
+    throw ("All {0} same-name NFO reads failed. Refusing to write an incomplete audit snapshot. Sample error: {1}" -f $nfoFiles.Count, $sampleError)
+}
+
+if ($nfoReadErrors.Count -gt 0) {
+    Write-Warning ("{0} same-name NFO files could not be parsed/read; their errors will be kept in NfoReadError." -f $nfoReadErrors.Count)
+}
+
 Write-Host ""
 Write-Host "[5/5] Serializing audit snapshot..."
 
@@ -330,6 +346,9 @@ Write-Host ("Normal items:        {0}" -f $normalItems.Count)
 Write-Host ("Normal Episodes:     {0}" -f $normalEpisodeCount)
 Write-Host ("Expanded Episodes:   {0}" -f $expandedEpisodes.Count)
 Write-Host ("Filesystem videos:   {0}" -f $filesystemVideos.Count)
+Write-Host ("Same-name NFOs:      {0}" -f $nfoFiles.Count)
+Write-Host ("NFO summaries:       {0}" -f $nfoSummaries.Count)
+Write-Host ("NFO read errors:     {0}" -f $nfoReadErrors.Count)
 Write-Host ("Output:               {0}" -f $outputFull)
 Write-Host ""
 Write-Host "READ ONLY: no Jellyfin metadata, NFO, media file, or database was changed."
