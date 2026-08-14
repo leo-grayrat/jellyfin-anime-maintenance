@@ -128,44 +128,51 @@ Jellyfin `MetadataService.GetProviders()` 的当前规则是：
 
 这本身目前更像正常的增量刷新语义，不单独作为 Jellyfin bug。
 
-## 7. 下一步真实验证
+## 7. 22:39 单 Episode FullRefresh：TMDB 明确返回 no metadata
 
-下一步不再改文件、不重建库，只在 pilot 中选 **一个 Overview 缺失的 Episode**（优先 Frieren S02E06），在 Debug 日志开启期间通过 Jellyfin UI：
+用户随后在 Debug 日志开启期间，对 pilot 中 Frieren S02E06 单独执行：
 
 ```text
 刷新元数据 -> 搜索缺少的元数据
 ```
 
-Jellyfin Web 当前实现会把这个选项发送为：
+界面刷新后没有任何变化。Debug 日志第一次直接看到真实 Episode provider 链：
 
 ```text
-MetadataRefreshMode = FullRefresh
-ReplaceAllMetadata  = false
+Running "EpisodeNfoProvider" for ...S02E06...
+"EpisodeNfoProvider" returned no metadata for ...S02E06...
+Running "TmdbEpisodeProvider" for ...S02E06...
+"TmdbEpisodeProvider" returned no metadata for ...S02E06...
+Running "OmdbEpisodeProvider" for ...S02E06...
 ```
 
-这会强制运行 Episode remote providers，但不会采用 ReplaceAll 删除旧 metadata。
+因此到这里可以明确：
 
-预期 Debug 日志应直接出现：
+- no-NFO pilot 确实没有 NFO metadata 干扰；
+- `TmdbEpisodeProvider` 这次确实被真实调用；
+- 对 Series TMDB `209867`、物理 Episode `S02E06` 这一实际 item，Jellyfin 的 TMDB provider 返回了 `HasMetadata=false`；
+- 这直接解释了 FullRefresh 后界面仍没有正确 Episode title/overview。
 
-```text
-Running TmdbEpisodeProvider for ...S02E06...
-Running OmdbEpisodeProvider for ...S02E06...
-```
+日志只显示 `Running OmdbEpisodeProvider`，没有显示 `returned no metadata`。Jellyfin 当前源码在 provider 成功时不会额外打印“success”日志，因此仅凭这一段不能判断 OMDb 是成功返回了无可见变化的 partial metadata，还是后续结果未落在截取范围内。当前关键结论只锁定 TMDB：**它明确 no metadata**。
 
-并在 provider 无结果时出现：
+## 8. 当前主线已经缩到 TMDB lookup input / TMDB 数据
 
-```text
-TmdbEpisodeProvider returned no metadata for ...
-OmdbEpisodeProvider returned no metadata for ...
-```
+`TmdbEpisodeProvider.GetMetadata()` 当前只有在以下几类情况下返回空：
 
-这才是下一步有判别力的真实 provider 诊断。
+- item 被标成 missing episode；
+- lookup 中没有可用 Series TMDB ID；
+-没有 Episode number；
+- 最终 `_tmdbClientManager.GetEpisodeAsync(...)` 返回 null。
 
-## 8. Fate/strange Fake 特别篇
+当前已知这个物理文件的 S/E 是正确的，Series 目录也 pin 为 `[tmdbid-209867]`；但 Debug 日志本身没有打印 `EpisodeInfo` 的完整 lookup input，因此还不能在“Jellyfin 构造 lookup 错误”和“TMDB 当前对该请求返回空”之间最终二选一。
+
+外部公开资料可以独立确认 Frieren 第2期第6话真实存在，通算第34话，标题为「討伐要請」，2026-02-27 已播出。因此这不是用户把一个尚不存在的 S02E06 强行命名出来的问题。下一步应直接核对 TMDB 当前该 Series/S/E 的数据，或把 Jellyfin 实际 lookup input（尤其 SeriesDisplayOrder、language、country、season、episode）完整导出。
+
+## 9. Fate/strange Fake 特别篇
 
 FSF 的 `Whispers of Dawn` 与上述问题分开处理。它在外部数据库中是独立 TV Movie，而不是当前 TV Series 的普通 Episode。因此把它放在 Series 的 `S00E01` 下时，不应期待常规 Series Episode lookup 自动获得完整 metadata；后续更适合做明确的本地 metadata 特例。
 
-## 9. 上游 issue 候选
+## 10. 上游 issue 候选
 
 本轮两个可能的 Jellyfin 上游问题继续单独存档：
 
@@ -173,13 +180,13 @@ FSF 的 `Whispers of Dawn` 与上述问题分开处理。它在外部数据库�
 docs/history/2026-08-14-jellyfin-upstream-issue-candidates.md
 ```
 
-其中第二项已同步修正：当前 Debug 日志证明普通扫描没有重跑 Episode provider，所以不能拿本次语言修改后的“无变化”作为 TMDB Episode lookup 失败的直接证据。
+候选 2 的证据现在比 22:29 时明显更强：单 Episode FullRefresh 已真实调用 `TmdbEpisodeProvider`，并明确得到 `returned no metadata`。但在确认 TMDB 当前 endpoint 本身有数据、以及 Jellyfin 实际 lookup input 无误之前，仍不直接认定为 Jellyfin bug。
 
-## 10. 当前边界
+## 11. 当前边界
 
 - 不修改 v3 构建器；
 - 不再以删除 sparse NFO 作为修复方向；
-- 语言假设恢复为“待有效 FullRefresh 验证”，而不是“已排除”；
 - 不对生产库执行 ReplaceAll metadata；
-- 下一步只在临时 pilot 的单个 Episode 上执行 `FullRefresh + replaceAllMetadata=false`；
+- 不再通过普通扫描判断 Episode remote provider；
+- 下一步只读核对 TMDB 当前 Episode 数据和 Jellyfin 实际 lookup input；
 - 真实结论仍以本地 Windows + Jellyfin 12 结果为准。
