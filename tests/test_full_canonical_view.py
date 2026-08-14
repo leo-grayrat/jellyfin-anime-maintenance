@@ -78,6 +78,7 @@ class FullCanonicalViewTests(unittest.TestCase):
         selected = fcv.select_production_locations(folders, fcv.DEFAULT_EXCLUDED_ROOTS)
         self.assertEqual([x["root"] for x in selected], [r"D:\Bangumi", r"E:\Anime"])
 
+
     def test_parent_of_excluded_root_is_not_silently_dropped(self):
         folders = [
             {"Name": "Too Broad", "CollectionType": "tvshows", "Locations": ["D:\\"]},
