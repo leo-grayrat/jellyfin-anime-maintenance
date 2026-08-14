@@ -33,11 +33,11 @@ D:\Resource\BangumiLink\
 
 - `View`：长期保留的 Jellyfin 规范视图。
 - `Temp`：Apply 时的临时构建状态。
-- `Logs`：`manifest.csv` 和每次 Apply 的构建日志。
+- `Logs`：manifest 和每次 Apply 的构建日志。
 
 新脚本不会在 `D:\` 根目录新建 staging/probe/temp 目录。
 
-## 当前范围
+## Phase 1：243 个已确认修正目标
 
 第一版只处理 `jellyfin_tv_nfo_run_log.csv` 中经过筛选、去重后的 **243 个 correction targets**：
 
@@ -45,136 +45,147 @@ D:\Resource\BangumiLink\
 - `Action = WRITE`
 - 有明确 `VideoPath / Season / Episode`
 
-这 243 个目标只是现有 TV 动画库的一小部分。因此：
-
-**当前 View 不能直接替换完整 Jellyfin TV 库，也不应与原始 TV 根目录同时挂到主媒体库中。**
-
-只扫描 View 会让其他正常动画消失；同时扫描原始目录和 View 又会让这 243 个目标重复出现。完整切库要等后续“全库镜像/透传 hardlink”阶段完成。
-
-## 使用
-
-### 1. Dry-run
+Phase 1 使用：
 
 ```powershell
-.\scripts\build_jellyfin_canonical_view.ps1 `
+.\scripts\build_jellyfin_canonical_view.ps1 -ApiKey "<API_KEY>"
+```
+
+确认 dry-run 后：
+
+```powershell
+.\scripts\build_jellyfin_canonical_view.ps1 -ApiKey "<API_KEY>" -Apply
+```
+
+它只为 243 个目标创建显式 `SxxEyy - <原文件名>` 视频 hardlink，并复制对应 NFO。`Logs\manifest.csv` 是 Phase 1 的来源证明。
+
+2026-08-13 的真实 Apply 已验证：243 个视频和 243 个 NFO 全部生成，随后第二次 dry-run 为 243/243 reusable；原始媒体没有被移动或修改。
+
+**Phase 1 View 仍然是 partial view，不能单独替换完整 TV 库，也不能和原始 TV 根目录同时挂入生产媒体库。**
+
+## Phase 2：完整 TV View
+
+Phase 2 新增：
+
+```text
+scripts/build_jellyfin_full_canonical_view.ps1
+scripts/lib/full_canonical_view_common.ps1
+scripts/lib/full_canonical_view_apply.ps1
+```
+
+目标是让 View 覆盖整个生产 TV 文件集合，而不是只覆盖 243 个修正目标。
+
+当前规则是：
+
+- 生产源默认只接受 `D:\Bangumi` 下的 `CollectionType=tvshows` Jellyfin location；
+- 当前生产视频基线固定校验为 676；
+- 243 个 correction videos 使用显式 `SxxEyy - ` 前缀；
+- 与 correction video 同目录、file stem 完全相同的非视频 sidecar 跟随相同前缀；
+- 其余视频和文件保持原相对目录与原文件名，不自动推断 S/E；
+- 视频和 `.ass/.ssa/.srt/.vtt/.sub/.idx` 使用同盘 hardlink；
+- NFO 以及其他未知/metadata 文件默认 copy；
+- 未知文件优先保留，不静默丢弃；
+- `C:\bangumi`、`D:\Jellyfin-Repro` 和 `D:\Gekijouban` 不在默认生产范围内。
+
+这意味着 33 个 non-target hidden、SP、OVA、NCOP/NCED、PV、menu、Bonus 等不会因为 Phase 2 而被自动重新解释。
+
+### Phase 2 dry-run
+
+目前应先运行测试，然后只做 dry-run：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\scripts\build_jellyfin_full_canonical_view.ps1 `
     -ApiKey "<API_KEY>"
 ```
 
-Dry-run 只读取：
+preflight 会至少验证：
 
-- Jellyfin `/System/Info`
-- Jellyfin `/Library/VirtualFolders`
-- correction run log
-- 原视频 / 原 NFO
-- 已存在的 `Logs\manifest.csv`（若存在）
+- 生产视频数量仍为 676；
+- correction targets 仍为 243；
+- 243 个 target 都属于生产 source inventory；
+- target NFO 的 season/episode 仍与 correction 记录一致；
+- source roots 与 View 不互相包含；
+- canonical path 不碰撞；
+- hardlink 不跨盘；
+- Phase 1 manifest 与现有 243 target video/NFO 仍能对应；
+- `Logs\full-manifest-v2.csv` 中没有已经脱离当前 source plan 的陈旧条目；
+- View 中没有无法由 Phase 1/Phase 2 manifest 解释的现存文件；
+- 已有目标只能是 `REUSABLE`，否则为冲突，绝不覆盖 unmanaged 文件。
 
-它不会创建 `View`、`Temp` 或 `Logs` 内容。
+Dry-run 不创建 View/Temp/Logs 内容。
 
-正常首次构建前应看到：
+### Phase 2 Apply
 
-```text
-Planned targets:      243
-Preflight failures:   0
-Videos reusable:      0
-Videos to create:     243
-NFOs reusable:        0
-NFOs to create:       243
-```
-
-### 2. Apply
-
-确认 dry-run 映射无误后：
+代码支持显式 `-Apply`：
 
 ```powershell
-.\scripts\build_jellyfin_canonical_view.ps1 `
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\scripts\build_jellyfin_full_canonical_view.ps1 `
     -ApiKey "<API_KEY>" `
     -Apply
 ```
 
-Apply 会先重新完成全部 preflight；任何 target 预检失败时不会开始写文件。
+但在真实 Windows PowerShell 5.1 dry-run 输出被核对前，不应执行生产 Apply。
 
-预检通过后：
+Apply 会重新完整 preflight 一次，然后：
 
-1. 在 `Temp\build-<timestamp>` 保存本次计划；
-2. 在 View 中建立需要的目录；
-3. 用 native `CreateHardLinkW` 创建 canonical 视频；
-4. 复制 canonical NFO；
-5. 逐项验证文件存在和视频长度；
-6. 成功后写 `Logs\manifest.csv` 和 `Logs\build-<timestamp>.csv`。
+1. 在 `Temp\full-build-<timestamp>` 固化本次 plan；
+2. 只创建 plan 中状态为 `MISSING` 的 hardlink/copy；
+3. 对 `REUSABLE` 项不重建；
+4. 每项创建后验证目标存在且长度与 source 一致；
+5. 写新的 per-file `Logs\full-manifest-v2.csv`；
+6. manifest 先写临时文件，再通过 native replace 原子替换；
+7. 若 manifest commit 之前失败，只回滚本次 build 新创建、且路径仍位于 View 下的 destination；
+8. rollback 不使用 source path，也不会删除此前 build 已管理的文件。
 
-脚本兼容 Windows PowerShell 5.1，并对本库中已经出现的超长 Windows 路径使用 native Windows 文件 API，避免传统 `MAX_PATH` 限制和 PowerShell hardlink provider 对 `[]` 路径的误处理。
+Phase 2 不修改 Jellyfin library root。完整 View 构建成功之后，仍需在独立验证库确认结构，再人工决定是否切生产库。
 
-## Manifest 与重复运行
+## Full manifest v2
 
-`Logs\manifest.csv` 记录 canonical target 与原始源文件之间的对应关系，至少包括：
+Phase 2 的 `Logs\full-manifest-v2.csv` 是逐文件账本，包含：
 
 ```text
-Work
+SourcePath
+CanonicalPath
 LibraryName
-OriginalVideo
-OriginalNfo
-ExpectedSeason
-ExpectedEpisode
+Role
+Operation
+SourceLength
 ExpectedKey
-CanonicalVideo
-CanonicalNfo
-VideoLength
 BuildId
 Status
 ```
 
-已经存在的 canonical 文件只有在 manifest 能证明它来自同一源文件，并且视频长度符合预期时，才会被判定为 `REUSABLE`。
-
-已存在但无法由 manifest 证明来源的目标文件会直接导致 preflight 失败，不会被覆盖。
-
-2026-08-13 的首次实际 Apply 结果：
+角色包括：
 
 ```text
-planned targets = 243
-preflight failures = 0
-canonical videos ready = 243
-canonical NFOs ready = 243
-videos created = 243
-videos reused = 0
-NFOs created = 243
-NFOs reused = 0
-source media modified = 0
-source media moved = 0
-unmanaged target overwritten = 0
-manifest ready = true
-build log ready = true
+CORRECTION_VIDEO
+CORRECTION_SIDECAR
+PASSTHROUGH_VIDEO
+PASSTHROUGH_FILE
 ```
 
-随后再次 dry-run：
+Phase 1 的 `Logs\manifest.csv` 不会被改写；首次 Phase 2 preflight 会把它仅作为已有 243 个 correction video/NFO 的来源证明，成功 Apply 后再由 manifest v2 接管整个 View 的逐文件追踪。
 
-```text
-Existing manifest rows: 243
-Planned targets:      243
-Preflight failures:   0
-Videos reusable:      243
-Videos to create:     0
-NFOs reusable:        243
-NFOs to create:       0
+## 测试
+
+Phase 2 新增的安全测试包括：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test_full_canonical_view_common.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test_full_canonical_view_command.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test_full_canonical_view_apply.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\check_windows_powershell_compat.ps1
 ```
 
-这验证了第一版 243-target View 的幂等复用行为。
+`test_full_canonical_view_apply.ps1` 只在 `%TEMP%` 下建立 fixture，验证：首次 hardlink/copy、manifest-v2、第二次全量 reusable，以及故意失败时只回滚 View destination、不删除 source。
 
-## 失败与回滚边界
-
-Apply 中途失败时，脚本停止继续扩展，并只尝试删除**本次 build 新创建**的 canonical 视频/NFO 和本次新建且仍为空的 View 目录。
-
-它不会因为回滚而删除：
-
-- 原始视频；
-- 原始 NFO；
-- 以前 build 已经由 manifest 管理的文件；
-- correction targets 之外的未知媒体文件。
-
-如果 rollback 本身出现错误，脚本会保留 build temp / failure log 供人工检查，而不是继续猜测性清理。
+本仓库当前开发环境无法运行 Windows PowerShell，因此这些测试必须以用户 Windows 机器实际输出为准；在看到真实 PASS 前，不把它们记为已通过。
 
 ## 与旧 NFO 脚本的关系
 
-`jellyfin_tv_nfo_fix.ps1` 和已有规则没有作废。它们现在承担的是“确定正确身份”的上游工作：
+`jellyfin_tv_nfo_fix.ps1` 和已有规则没有作废。它们承担“确定正确身份”的上游工作：
 
 ```text
 字幕组原始文件
@@ -183,18 +194,18 @@ Apply 中途失败时，脚本停止继续扩展，并只尝试删除**本次 bu
         ↓
 正确的 Season / Episode
         ↓
-build_jellyfin_canonical_view.ps1
+canonical view
         ↓
-SxxEyy - <原文件名>
+已确认目标：SxxEyy - <原文件名>
+其他媒体：原样透传
         ↓
 Jellyfin 规范输入
 ```
 
-也就是说，NFO 从“最终修复手段”转成了规范视图的重要元数据来源。
-
-完整原因与实验链见：
+完整原因、设计与实现计划见：
 
 ```text
 docs/history/2026-08-12-jellyfin12-path-parser-and-alternate-version.md
-experiments/jellyfin12-nfo-refresh/README.md
+docs/superpowers/specs/2026-08-14-full-canonical-view-phase2-design.md
+docs/superpowers/plans/2026-08-14-full-canonical-view-phase2.md
 ```
