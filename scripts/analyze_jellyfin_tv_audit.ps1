@@ -42,7 +42,7 @@ function Test-AuditExtraLike {
     )
 
     $candidate = (([string]$Path) + "\" + ([string]$Name)).Replace('/', '\')
-    if ($candidate -match '(?i)\\(SPs?|Bonus|Extras?|Tokuten|PV|menu|NCOP&NCED|NCOP|NCED)\\') {
+    if ($candidate -match '(?i)\\(SPs?|Bonus|Extras?|Tokuten|PV|menu|NCOP&NCED|NCOP|NCED|Fonts?|CDs?|\u7279\u5178(?:\u6620\u50cf)?)\\') {
         return $true
     }
 
@@ -58,7 +58,7 @@ function Test-AuditExtraLike {
     }
 
     $combined = $leaf + " " + ([string]$Name)
-    return $combined -match '(?i)(^|[\[\s._-])(NCOP|NCED|OVA|OP|ED|SP)([\]\s._-]|$)'
+    return $combined -match '(?i)(^|[\[\s._-])(NCOP|NCED|OVA|OP|ED|SP|PV)([\]\s._-]|$)'
 }
 
 function Add-AuditLabel {
@@ -191,6 +191,46 @@ foreach ($series in @($normalItems | Where-Object { [string]$_.Type -eq "Series"
         HasPrimaryImage     = (Test-AuditHasPrimaryImage -Item $series)
         MediaSourceCount    = ""
         ScopeTags           = "SERIES"
+        IssueLabels         = ($labels -join ";")
+    })
+}
+
+foreach ($season in @($normalItems | Where-Object { [string]$_.Type -eq "Season" })) {
+    $labels = New-Object System.Collections.Generic.List[string]
+    $indexProperty = $season.PSObject.Properties['IndexNumber']
+    $hasIndex = $null -ne $indexProperty -and $null -ne $indexProperty.Value
+
+    if (-not $hasIndex) {
+        Add-AuditLabel -Labels $labels -Label "STRUCTURE_SEASON_MISSING_INDEX"
+    }
+    elseif ([int]$season.IndexNumber -ge 100) {
+        Add-AuditLabel -Labels $labels -Label "STRUCTURE_SUSPICIOUS_SEASON_NUMBER"
+    }
+
+    if (Test-AuditExtraLike -Path ([string]$season.Path) -Name ([string]$season.Name)) {
+        Add-AuditLabel -Labels $labels -Label "REVIEW_EXTRAS"
+    }
+
+    $rows.Add([pscustomobject]@{
+        ItemType            = "Season"
+        LibraryName         = [string]$season.LibraryName
+        SeriesName          = [string]$season.SeriesName
+        SeriesId            = [string]$season.SeriesId
+        ItemId              = [string]$season.Id
+        Season              = if ($hasIndex) { [string]$season.IndexNumber } else { "" }
+        Episode             = ""
+        Title               = [string]$season.Name
+        Path                = [string]$season.Path
+        VisibleInNormalView = $true
+        CorrectionTargetNfo = $false
+        NfoSeason           = ""
+        NfoEpisode          = ""
+        NfoStructureMatches = ""
+        HasProviderId       = (Test-AuditHasProviderId -Item $season)
+        HasOverview         = (-not [string]::IsNullOrWhiteSpace([string]$season.Overview))
+        HasPrimaryImage     = (Test-AuditHasPrimaryImage -Item $season)
+        MediaSourceCount    = ""
+        ScopeTags           = "SEASON"
         IssueLabels         = ($labels -join ";")
     })
 }
@@ -330,6 +370,7 @@ foreach ($row in $rows) {
 }
 
 $episodeRows = @($rows | Where-Object { $_.ItemType -eq "Episode" })
+$seasonRows = @($rows | Where-Object { $_.ItemType -eq "Season" })
 $seriesRows = @($rows | Where-Object { $_.ItemType -eq "Series" })
 $correctionRows = @($episodeRows | Where-Object { $_.CorrectionTargetNfo })
 $hiddenRows = @($episodeRows | Where-Object { -not $_.VisibleInNormalView })
@@ -346,6 +387,7 @@ $summaryLines.Add("")
 $summaryLines.Add("## Coverage")
 $summaryLines.Add("")
 $summaryLines.Add(("- Series rows: {0}" -f $seriesRows.Count))
+$summaryLines.Add(("- Season rows: {0}" -f $seasonRows.Count))
 $summaryLines.Add(("- Expanded Episode rows: {0}" -f $episodeRows.Count))
 $summaryLines.Add(("- Correction-target NFO rows: {0}" -f $correctionRows.Count))
 $summaryLines.Add(("- Hidden Episode rows: {0}" -f $hiddenRows.Count))
@@ -365,6 +407,7 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 Write-Host ""
 Write-Host "=== Summary ==="
 Write-Host ("Series rows:                 {0}" -f $seriesRows.Count)
+Write-Host ("Season rows:                 {0}" -f $seasonRows.Count)
 Write-Host ("Expanded Episode rows:       {0}" -f $episodeRows.Count)
 Write-Host ("Correction-target NFO rows:  {0}" -f $correctionRows.Count)
 Write-Host ("Hidden Episode rows:         {0}" -f $hiddenRows.Count)
