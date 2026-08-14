@@ -2,10 +2,11 @@
 
 本仓库当前方案不是重命名原收藏，而是在 `D:\Resource\BangumiLink` 下为 Jellyfin 构建规范 View。调查已经确认：仅写 NFO 可以修正 Episode 自身的季号/集号，但 Jellyfin 可能在读取 NFO 之前就根据完整路径建立错误的 `LocalAlternateVersion`。因此需要同时规范 Jellyfin 看到的路径。
 
-详细的 2026-08-14 实机过程记录见：
+详细实机记录见：
 
 ```text
 docs/history/2026-08-14-full-canonical-view-validation.md
+docs/history/2026-08-14-full-canonical-view-v3-apply.md
 ```
 
 ## 当前范围
@@ -20,123 +21,31 @@ docs/history/2026-08-14-full-canonical-view-validation.md
 
 因此 **634 是 D 盘 View scope，不是全部生产 TV**。后续生产切换只替换 9 个 D 盘 TV roots，`C:\bangumi` 继续作为独立正式库保留。
 
-只读范围诊断：
+## v2：文件层已完成，Jellyfin 验证基本成功
 
-```powershell
-python .\scripts\diagnose_jellyfin_tv_roots.py `
-    --api-key "<API_KEY>"
-```
-
-## v2：完整 Full View，已经实机构建成功
-
-当前已验证的 v2 入口：
-
-```text
-scripts/build_jellyfin_full_canonical_view.py
-scripts/apply_jellyfin_full_canonical_view.py
-```
-
-只读 inventory / mapping：
-
-```powershell
-python .\scripts\build_jellyfin_full_canonical_view.py `
-    --api-key "<API_KEY>"
-```
-
-v2 对 634 个 D 盘视频生成 1227 行完整 mapping：
-
-```text
-CORRECTION_VIDEO:   243
-CORRECTION_SIDECAR: 243
-PASSTHROUGH_VIDEO:  391
-PASSTHROUGH_FILE:   350
-HARDLINK:           738
-COPY:               489
-```
-
-写入脚本默认仍然是只读 preflight：
-
-```powershell
-python .\scripts\apply_jellyfin_full_canonical_view.py `
-    --api-key "<API_KEY>"
-```
-
-2026-08-14 真实 Windows preflight：
+v2 完整 View 已在真实 Windows/NTFS 上 Apply 并通过二次幂等检查：
 
 ```text
 Source files:       1227
 Source videos:      634
 Correction targets: 243
-Reusable rows:      486
-Rows to create:     741
-Conflicts:          0
-```
-
-随后真实执行：
-
-```powershell
-python .\scripts\apply_jellyfin_full_canonical_view.py `
-    --api-key "<API_KEY>" `
-    --apply
-```
-
-真实结果：
-
-```text
-Build id:     20260814-194819-395761
-Created rows: 741
-Reused rows:  486
-Manifest:     D:\Resource\BangumiLink\Logs\full-manifest-v2.csv
-Build log:    D:\Resource\BangumiLink\Logs\full-build-20260814-194819-395761.csv
-```
-
-第二次真实 dry-run：
-
-```text
 Reusable rows:      1227
 Rows to create:     0
 Conflicts:          0
 ```
 
-因此 v2 文件层已经在真实 Windows/NTFS 上闭环。
+v2 验证库 `D:\Resource\BangumiLink\View\2026年1月新番` 中：
 
-v2 的基本写入策略：
+- 186 个物理视频全部可追踪；
+- normal Episode 从原库的 120 提升到 181；
+- 剩余 5 个差值全部是真实多版本；
+- 因此原来的错误 hidden / `LocalAlternateVersion` 合并问题基本解决。
 
-- 视频和 `.ass/.ssa/.srt/.vtt/.sub/.idx`：同盘 hardlink；
-- NFO、图片和其他普通文件：copy；
-- 不移动、重命名、覆盖或删除原始媒体；
-- 不写 Jellyfin SQLite；
-- 不自动修改 Jellyfin production library root。
+v2 同时暴露了三类集中残留：四个 Series 网络身份不稳定、《名探偵プリキュア！》单集目录形成额外 Season、78 个语言后缀字幕未跟随 correction video。
 
-## v2 Jellyfin 独立验证结果
+## v3：文件层已完成
 
-建立过独立验证库：
-
-```text
-验证-2026年1月
-D:\Resource\BangumiLink\View\2026年1月新番
-```
-
-该目录有 186 个物理视频。第一次自然扫描后：
-
-- 186 个物理路径全部能够在 Jellyfin expanded Episode / MediaSources 中追踪；
-- normal Episode 为 181；
-- 5 个差值全部是真实多版本：死亡游戏 E08 的 v1/v2，以及 Medalist E02～E05 的双版本；
-- 原库同样 186 个物理视频时只有 120 个 normal Episode。
-
-因此 v2 已经基本解决原来的错误 hidden / `LocalAlternateVersion` 合并问题。
-
-验证同时暴露出三类集中残留：
-
-1. Fate/strange Fake、Medalist 第2期、【推しの子】第3期、芙莉莲第2期的 Series 网络身份自动匹配不稳定；
-2. 《名探偵プリキュア！》保留“一集一个子目录”，导致 1 个正确 Season 01 + 27 个额外 Season-like 容器，且 `NCOP_ED_01` 被误当成 S01E11；
-3. `video.chs.ass` / `video.cht.ass` / `video.sc.ass` / `video.tc.ass` 等 78 个语言后缀字幕没有跟随 correction video 的 canonical 名称。
-
-这些问题不推翻 v2 的主体结构，因此单独做 v3 验证，不覆盖已经验证成功的 v2。
-
-## v3：并行 `View-v3`
-
-v3 复用 v2 已验证的 Python 事务核心，但使用独立入口：
+入口：
 
 ```text
 scripts/apply_jellyfin_full_canonical_view_v3.py
@@ -149,60 +58,74 @@ View:     D:\Resource\BangumiLink\View-v3
 Manifest: D:\Resource\BangumiLink\Logs\full-manifest-v3.csv
 ```
 
-v3 只增加已经由验证库证实需要的规则：
+v3 只增加已由真实验证证明需要的局部规则：
 
-- 四个问题 Series 使用明确 TMDB ID 的 canonical Series 目录；
+- Fate/strange Fake、Medalist 第2期、【推しの子】第3期、芙莉莲第2期使用明确 TMDB ID 的 canonical Series 目录；
 - 《名探偵プリキュア！》correction 正片压平到 `Season 01`；
-- 该作品的 NCOP/ED 进入 `extras`；
-- correction sidecar 支持 `video.chs.ass` 等语言后缀形式。
+- NCOP/ED 进入 `extras`；
+- correction sidecar 支持 `video.chs.ass` / `video.cht.ass` 等语言后缀形式。
 
-v3 不继承 Phase 1/v2 manifest，也不会修改 `D:\Resource\BangumiLink\View`。
-
-### 当前 v3 实机状态
-
-第一次 Windows dry-run 暴露过一个真实 Windows 路径 bug：脚本用空字符串表示“不继承 Phase 1 manifest”，在 Windows 长路径转换时触发 `ERROR: path must not be empty`。已改为合法但不存在的占位 manifest 路径。
-
-修复后的真实 Windows preflight：
+真实 v3 Apply：
 
 ```text
-=== Python Full Canonical View v3 Preflight ===
-Mode: READ ONLY
-View root:          D:\Resource\BangumiLink\View-v3
-Production roots:   9
-Source files:       1227
-Source videos:      634
-Correction targets: 243
+Build id:     20260814-211137-174767
+Created rows: 1227
+Reused rows:  0
+Manifest:     D:\Resource\BangumiLink\Logs\full-manifest-v3.csv
+```
+
+实际 manifest 独立核验：
+
+```text
+CORRECTION_VIDEO:   243
 CORRECTION_SIDECAR: 321
-CORRECTION_VIDEO: 243
-PASSTHROUGH_FILE: 272
-PASSTHROUGH_VIDEO: 391
-HARDLINK rows:      738
-COPY rows:          489
-Reusable rows:      0
-Rows to create:     1227
+PASSTHROUGH_VIDEO:  391
+PASSTHROUGH_FILE:   272
+HARDLINK:           738
+COPY:               489
+SourcePath duplicates:    0
+CanonicalPath duplicates: 0
+```
+
+其中 321 个 correction sidecar = 243 NFO + 78 个语言后缀 ASS；光美 54，Clevatess 24。光美 113 行 canonical 路径只落在 `Season 01`（112）和 `extras`（1）。
+
+Apply 后真实二次 dry-run：
+
+```text
+Reusable rows:      1227
+Rows to create:     0
 Conflicts:          0
 ```
 
-其中 sidecar `243 → 321` 与 78 个语言后缀字幕完全对应，总映射仍为 1227，当前没有 collision / conflict。
+因此 **v3 文件层已经完成，不再继续修改构建器，除非后续 Jellyfin 验证发现新的实际结构问题。**
 
-v3 尚未执行 `--apply`。下一步仍以真实 Windows 输出为准：
+## 当前下一步：Jellyfin v3 独立验证
 
-```powershell
-python .\scripts\apply_jellyfin_full_canonical_view_v3.py `
-    --api-key "<API_KEY>" `
-    --apply
+新建一个独立 TV 验证库，只挂载：
+
+```text
+D:\Resource\BangumiLink\View-v3\2026年1月新番
 ```
 
-执行后应先再次运行不带 `--apply` 的 preflight，确认全部 reusable；随后再建立独立 Jellyfin v3 验证库。生产库切换仍然放在验证完成之后。
+不要修改现有生产库，也先保留 v2 验证库便于对照。第一次自然扫描后重点检查：
+
+- 186 个物理视频是否全部可追踪；
+- normal Episode 是否仍为 181，5 个差值是否仍是真实多版本；
+- 《名探偵プリキュア！》是否只剩正常 Season 01；
+- `NCOP_ED_01` 是否不再成为 S01E11；
+- 四个 `[tmdbid-...]` Series 是否获得正确网络身份；
+- 语言后缀字幕是否挂到对应 Episode。
+
+通过后再讨论生产切换。生产切换仍只涉及 9 个 D 盘 TV roots；`C:\bangumi` 保持原样。
 
 ## 安全边界
 
-当前始终保持：
+始终保持：
 
 - 原始收藏不移动、不重命名、不删除；
 - `C:\bangumi` 42 个正式杂项 TV 不进入 D 盘 hardlink View；
 - 不直接写 Jellyfin SQLite；
 - 不自动修复全部 33 个 non-target hidden/extras；
-- Episode 标题、Overview、Provider metadata 属于另一层问题，不和 canonical 文件布局混在一起；
-- v2 / v3 验证完成前，不切换生产 Jellyfin roots；
-- 真实结论以本地 Windows + NTFS + Jellyfin 12 输出为准，云端测试只能作为代码检查，不能替代实机验证。
+- Episode 标题、Overview、Provider metadata 属于另一层问题；
+- v3 Jellyfin 验证完成前，不切换生产 roots；
+- 真实结论以本地 Windows + NTFS + Jellyfin 12 输出为准。
