@@ -27,8 +27,10 @@
 
 1. 调用 `/Library/VirtualFolders` 读取当前 TV 库和模板库 `LibraryOptions`；
 2. 枚举 `View-v3` 的一级目录，每个一级目录视为一个目标 Jellyfin TV 库：
-   - 库名 = 一级目录名；
-   - 路径 = 对应一级目录完整路径；
+   - 物理路径始终使用现有一级目录，不重命名 `View-v3`；
+   - `YYYY年M月新番` 这种单数字月份只在 Jellyfin 库名中补零为 `YYYY年0M月新番`，因此 `1/4/7` 月显示为 `01/04/07`；
+   - `YYYY年10月新番` 等已经是两位数的月份保持不变；
+   - `2017年动画` 等非季度目录名保持不变；
 3. 复制模板库的完整 `LibraryOptions`，仅替换 `PathInfos` 为当前目标目录；
 4. 默认只打印计划，不写 Jellyfin；
 5. `--apply` 时通过 `POST /Library/VirtualFolders` 创建缺失库；
@@ -41,6 +43,7 @@
 - 不删除任何已有库；
 - 不修改正式外部库 `C:\bangumi`；
 - 不修改任何文件；
+- 不重命名 `View-v3` 的现有一级目录；
 - 不复制模板库的原始路径，只复制配置；
 - 模板必须是 `CollectionType=tvshows`；
 - 只对用户显式指定的模板库放宽临时路径重叠，任何其他库占用目标路径仍视为冲突。
@@ -100,6 +103,7 @@
 ### 分组库创建
 
 - Dry-run 能准确列出 `View-v3` 一级目录对应的所有目标库；
+- 单数字月份的 Jellyfin 库名按两位数月份显示并参与排序；
 - 不带 `--apply` 时 Jellyfin 状态零变化；
 - `--apply` 后目标库名称与路径一一对应；
 - 新库的 metadata/image provider 优先级、语言等配置与模板库一致；
