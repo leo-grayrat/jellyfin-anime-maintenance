@@ -54,7 +54,7 @@ Validated v2 View and original media paths were not modified.
 - `CanonicalPath` 重复：0；
 - correction 行的 `ExpectedKey` 全部为合法 `SxxEyy`；
 - correction canonical 文件名全部以对应 `SxxEyy - ` 开头；
-- operation 与文件类型一致：视频/字幕为 HARDLINK，其他文件为 COPY。
+- passthrough 行没有错误携带 `ExpectedKey`。
 
 ### 2.1 78 个语言后缀字幕
 
@@ -63,7 +63,7 @@ Validated v2 View and original media paths were not modified.
 - 243 个 NFO；
 - 78 个 `.ass` 语言后缀字幕；
 
-组成。78 个字幕逐一都能唯一匹配到对应 correction video，且 `ExpectedKey` 一致。
+组成。
 
 实际来源分布：
 
@@ -72,29 +72,63 @@ Validated v2 View and original media paths were not modified.
 
 ### 2.2 名探偵プリキュア！
 
-v3 manifest 中该作品共 113 行。媒体路径不再保留 27 个 `[FLsnow]...[01]`～`[27]` 单集目录作为 season-like 层级：
+v3 manifest 中该作品共 113 行，canonical 路径的第一层只剩：
 
-- 正片/NFO/字幕落入 `名探偵プリキュア！ (2026)\Season 01\...`；
-- 3 个字体文件仍位于 `Season 01\[FLsnow][Star-Detective_Precure][Fonts]\`，属于非媒体资源；
-- `NCOP_ED_01` 唯一落入 `名探偵プリキュア！ (2026)\extras\...`，Role 为 `PASSTHROUGH_VIDEO`，`ExpectedKey` 为空，不再伪装成 S01E11。
+- `Season 01`：112 行；
+- `extras`：1 行。
+
+原先 27 个 `[FLsnow]...[01]`～`[27]` 单集目录不再作为 Season-like 媒体层级保留。`NCOP_ED_01` 唯一进入 `extras`，Role 为 `PASSTHROUGH_VIDEO`，`ExpectedKey` 为空。
 
 ### 2.3 四个 Series provider pin
 
-实际 manifest 只出现以下四个 `[tmdbid-...]` series folder，未扩散到其他 Series：
+实际 manifest 只出现以下四个 `[tmdbid-...]` series folder：
 
-- `Fate strange Fake (2026) [tmdbid-229858]`：28 行；
-- `メダリスト 第2期 (2026) [tmdbid-237529]`：26 行；
-- `【推しの子】 第3期 (2026) [tmdbid-203737]`：22 行；
-- `葬送のフリーレン 第2期 (2026) [tmdbid-209867]`：20 行。
+- `Fate strange Fake (2026) [tmdbid-229858]`；
+- `メダリスト 第2期 (2026) [tmdbid-237529]`；
+- `【推しの子】 第3期 (2026) [tmdbid-203737]`；
+- `葬送のフリーレン 第2期 (2026) [tmdbid-209867]`。
 
-## 3. 当前下一步
+## 3. Apply 后二次真实 preflight
 
-文件层还差一次真实 Windows 二次 dry-run 来证明 v3 全部可复用。目标：
+Apply 完成后再次在真实 Windows 上运行不带 `--apply` 的 v3 preflight，得到：
 
 ```text
-Reusable rows: 1227
-Rows to create: 0
-Conflicts: 0
+=== Python Full Canonical View v3 Preflight ===
+Mode: READ ONLY
+View root:          D:\Resource\BangumiLink\View-v3
+Production roots:   9
+Source files:       1227
+Source videos:      634
+Correction targets: 243
+CORRECTION_SIDECAR: 321
+CORRECTION_VIDEO: 243
+PASSTHROUGH_FILE: 272
+PASSTHROUGH_VIDEO: 391
+HARDLINK rows:      738
+COPY rows:          489
+Reusable rows:      1227
+Rows to create:     0
+Conflicts:          0
+
+DRY RUN finished. No files were written.
 ```
 
-通过后，再把 `D:\Resource\BangumiLink\View-v3\2026年1月新番` 接入一个新的独立 Jellyfin 验证库，复查光美 season、NCOP、四个 Series 身份与真实多版本行为。
+这证明 v3 文件层已经在真实 Windows/NTFS 上闭环：1227 个计划目标全部可复用，没有 stale/unmanaged/collision/conflict。
+
+## 4. 当前下一步
+
+停止继续修改构建器。下一步只做 Jellyfin 行为验证：新建独立 TV 验证库，只挂载：
+
+```text
+D:\Resource\BangumiLink\View-v3\2026年1月新番
+```
+
+重点检查：
+
+- 186 个物理视频是否仍全部可追踪；
+- normal Episode 是否仍为 181，5 个差值是否仍全部是真实多版本；
+- 《名探偵プリキュア！》是否只剩正常 `Season 01`，且 NCOP 不再成为 S01E11；
+- 四个 `[tmdbid-...]` Series 是否得到正确网络身份；
+- 语言后缀字幕是否正常挂到对应 Episode。
+
+生产 Jellyfin roots 仍不切换，直到 v3 验证完成。
