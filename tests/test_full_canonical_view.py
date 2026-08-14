@@ -131,5 +131,75 @@ class FullCanonicalViewTests(unittest.TestCase):
         self.assertEqual(filesystem_only, [r"D:\TV\b.mkv"])
 
 
+    def test_v3_language_sidecar_follows_target_but_v2_does_not(self):
+        files = [
+            {"library_name": "TV", "library_root": r"D:\\Bangumi", "path": r"D:\\Bangumi\\Show\\ep01.mkv", "size": 1},
+            {"library_name": "TV", "library_root": r"D:\\Bangumi", "path": r"D:\\Bangumi\\Show\\ep01.chs.ass", "size": 1},
+        ]
+        target = {
+            "work": "A",
+            "rule_id": "r1",
+            "video_path": r"D:\\Bangumi\\Show\\ep01.mkv",
+            "path_key": fcv.path_key(r"D:\\Bangumi\\Show\\ep01.mkv"),
+            "expected_key": "S01E02",
+            "season": 1,
+            "episode": 2,
+        }
+        v2 = fcv.build_mapping(files, [target], r"D:\\View", layout_profile="v2")
+        v3 = fcv.build_mapping(files, [target], r"D:\\View3", layout_profile="v3")
+        v2_row = {fcv.path_key(x["source_path"]): x for x in v2}[fcv.path_key(r"D:\\Bangumi\\Show\\ep01.chs.ass")]
+        v3_row = {fcv.path_key(x["source_path"]): x for x in v3}[fcv.path_key(r"D:\\Bangumi\\Show\\ep01.chs.ass")]
+        self.assertEqual(v2_row["role"], "PASSTHROUGH_FILE")
+        self.assertTrue(v2_row["canonical_path"].endswith(r"ep01.chs.ass"))
+        self.assertEqual(v3_row["role"], "CORRECTION_SIDECAR")
+        self.assertTrue(v3_row["canonical_path"].endswith(r"S01E02 - ep01.chs.ass"))
+
+    def test_v3_pins_only_confirmed_2026_01_series(self):
+        files = [
+            {"library_name": "2026年1月新番", "library_root": r"D:\\Bangumi\\2026\\2026-01", "path": r"D:\\Bangumi\\2026\\2026-01\\Fate strange Fake (2026)\\ep.mkv", "size": 1},
+            {"library_name": "2026年1月新番", "library_root": r"D:\\Bangumi\\2026\\2026-01", "path": r"D:\\Bangumi\\2026\\2026-01\\正反対な君と僕 (2026)\\ep.mkv", "size": 1},
+        ]
+        rows = fcv.build_mapping(files, [], r"D:\\View3", layout_profile="v3")
+        by_source = {fcv.path_key(x["source_path"]): x for x in rows}
+        fate = by_source[fcv.path_key(r"D:\\Bangumi\\2026\\2026-01\\Fate strange Fake (2026)\\ep.mkv")]["canonical_path"]
+        other = by_source[fcv.path_key(r"D:\\Bangumi\\2026\\2026-01\\正反対な君と僕 (2026)\\ep.mkv")]["canonical_path"]
+        self.assertIn(r"Fate strange Fake (2026) [tmdbid-229858]", fate)
+        self.assertNotIn("tmdbid-", other)
+
+    def test_v3_precure_flattens_target_and_routes_ncop_to_extras(self):
+        root = r"D:\\Bangumi\\2026\\2026-01"
+        ep_dir = r"[FLsnow][Star-Detective_Precure][11][1080p]"
+        series = r"名探偵プリキュア！ (2026)"
+        video = root + "\\" + series + "\\" + ep_dir + r"\\[FLsnow][Star-Detective_Precure][11][1080p].mkv"
+        nfo = root + "\\" + series + "\\" + ep_dir + r"\\[FLsnow][Star-Detective_Precure][11][1080p].nfo"
+        sub = root + "\\" + series + "\\" + ep_dir + r"\\[FLsnow][Star-Detective_Precure][11][1080p].cht.ass"
+        ncop = root + "\\" + series + "\\" + ep_dir + r"\\[FLsnow][Star-Detective_Precure][NCOP_ED_01][DVDrip_SR_720p].mp4"
+        font = root + "\\" + series + "\\" + ep_dir + r"\\[FLsnow][Star-Detective_Precure][Fonts]\font.ttf"
+        files = [
+            {"library_name": "2026年1月新番", "library_root": root, "path": video, "size": 1},
+            {"library_name": "2026年1月新番", "library_root": root, "path": nfo, "size": 1},
+            {"library_name": "2026年1月新番", "library_root": root, "path": sub, "size": 1},
+            {"library_name": "2026年1月新番", "library_root": root, "path": ncop, "size": 1},
+            {"library_name": "2026年1月新番", "library_root": root, "path": font, "size": 1},
+        ]
+        target = {
+            "work": "名侦探光之美少女！",
+            "rule_id": "precure",
+            "video_path": video,
+            "path_key": fcv.path_key(video),
+            "expected_key": "S01E11",
+            "season": 1,
+            "episode": 11,
+        }
+        rows = fcv.build_mapping(files, [target], r"D:\\View3", layout_profile="v3")
+        by_source = {fcv.path_key(x["source_path"]): x for x in rows}
+        self.assertIn(r"名探偵プリキュア！ (2026)\Season 01\S01E11 - ", by_source[fcv.path_key(video)]["canonical_path"])
+        self.assertIn(r"名探偵プリキュア！ (2026)\Season 01\S01E11 - ", by_source[fcv.path_key(nfo)]["canonical_path"])
+        self.assertIn(r"名探偵プリキュア！ (2026)\Season 01\S01E11 - ", by_source[fcv.path_key(sub)]["canonical_path"])
+        self.assertIn(r"名探偵プリキュア！ (2026)\extras\[FLsnow][Star-Detective_Precure][NCOP_ED_01]", by_source[fcv.path_key(ncop)]["canonical_path"])
+        self.assertEqual(by_source[fcv.path_key(ncop)]["expected_key"], "")
+        self.assertIn(r"名探偵プリキュア！ (2026)\Season 01\[FLsnow][Star-Detective_Precure][Fonts]\font.ttf", by_source[fcv.path_key(font)]["canonical_path"])
+
+
 if __name__ == "__main__":
     unittest.main()
