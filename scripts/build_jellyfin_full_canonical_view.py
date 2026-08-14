@@ -21,6 +21,16 @@ DEFAULT_EXCLUDED_ROOTS = (
     r"D:\Resource\BangumiLink\View",
 )
 
+LAYOUT_PROFILES = {"v2", "v3"}
+V3_SERIES_TMDB_PINS = {
+    ("2026年1月新番", "Fate strange Fake (2026)"): "229858",
+    ("2026年1月新番", "メダリスト 第2期 (2026)"): "237529",
+    ("2026年1月新番", "【推しの子】 第3期 (2026)"): "203737",
+    ("2026年1月新番", "葬送のフリーレン 第2期 (2026)"): "209867",
+}
+V3_PRECURE_SERIES = "名探偵プリキュア！ (2026)"
+V3_PRECURE_EXTRA_TOKENS = ("NCOP_ED_",)
+
 
 def normalize_windows_path(path: str) -> str:
     if path is None:
@@ -95,23 +105,71 @@ def file_stem(path: str) -> str:
     return ntpath.splitext(ntpath.basename(normalize_windows_path(path)))[0]
 
 
-def find_sidecar_target(path: str, targets: Sequence[dict]) -> dict | None:
+def validate_layout_profile(layout_profile: str) -> str:
+    profile = str(layout_profile or "").strip().casefold()
+    if profile not in LAYOUT_PROFILES:
+        raise ValueError(f"unsupported layout profile: {layout_profile}")
+    return profile
+
+
+def find_sidecar_target(path: str, targets: Sequence[dict], layout_profile: str = "v2") -> dict | None:
     if is_video(path):
         return None
+    profile = validate_layout_profile(layout_profile)
     directory = path_key(ntpath.dirname(normalize_windows_path(path)))
     stem = file_stem(path).casefold()
-    matches = [
-        t
-        for t in targets
-        if path_key(ntpath.dirname(t["video_path"])) == directory
-        and file_stem(t["video_path"]).casefold() == stem
-    ]
+    matches = []
+    for target in targets:
+        if path_key(ntpath.dirname(target["video_path"])) != directory:
+            continue
+        video_stem = file_stem(target["video_path"]).casefold()
+        same_stem = stem == video_stem
+        language_or_named_sidecar = profile == "v3" and stem.startswith(video_stem + ".")
+        if same_stem or language_or_named_sidecar:
+            matches.append(target)
     if len(matches) > 1:
         raise ValueError(f"sidecar matches multiple correction targets: {path}")
     return matches[0] if matches else None
 
 
-def build_mapping(files: Sequence[dict], targets: Sequence[dict], view_root: str) -> list[dict]:
+def _pin_v3_series_component(library_name: str, relative: str) -> str:
+    normalized = normalize_windows_path(relative)
+    parts = normalized.split("\\")
+    if not parts:
+        return normalized
+    tmdb_id = V3_SERIES_TMDB_PINS.get((str(library_name), parts[0]))
+    if tmdb_id and f"[tmdbid-{tmdb_id}]" not in parts[0]:
+        parts[0] = f"{parts[0]} [tmdbid-{tmdb_id}]"
+    return ntpath.join(*parts)
+
+
+def _v3_precure_relative(relative: str, target: dict | None) -> str | None:
+    normalized = normalize_windows_path(relative)
+    parts = normalized.split("\\")
+    if not parts or parts[0] != V3_PRECURE_SERIES:
+        return None
+    filename = parts[-1]
+    upper_name = filename.upper()
+    if any(token in upper_name for token in V3_PRECURE_EXTRA_TOKENS):
+        return ntpath.join(V3_PRECURE_SERIES, "extras", filename)
+    if target and str(target.get("rule_id", "")).casefold() == "precure":
+        return ntpath.join(V3_PRECURE_SERIES, "Season 01", filename)
+    if (
+        len(parts) >= 3
+        and parts[1].startswith("[FLsnow][Star-Detective_Precure][")
+        and parts[1].endswith("][1080p]")
+    ):
+        return ntpath.join(V3_PRECURE_SERIES, "Season 01", *parts[2:])
+    return None
+
+
+def build_mapping(
+    files: Sequence[dict],
+    targets: Sequence[dict],
+    view_root: str,
+    layout_profile: str = "v2",
+) -> list[dict]:
+    profile = validate_layout_profile(layout_profile)
     target_index = {t["path_key"]: t for t in targets}
     source_index: dict[str, dict] = {}
     for source in files:
@@ -134,7 +192,7 @@ def build_mapping(files: Sequence[dict], targets: Sequence[dict], view_root: str
             role = "CORRECTION_VIDEO"
             expected = target["expected_key"]
         elif not is_video(source_path):
-            target = find_sidecar_target(source_path, targets)
+            target = find_sidecar_target(source_path, targets, profile)
             if target:
                 role = "CORRECTION_SIDECAR"
                 expected = target["expected_key"]
@@ -147,6 +205,11 @@ def build_mapping(files: Sequence[dict], targets: Sequence[dict], view_root: str
         if not path_under_or_equal(source_path, library_root) or path_key(source_path) == path_key(library_root):
             raise ValueError(f"source outside library root: source={source_path} root={library_root}")
         relative = source_path[len(library_root.rstrip('\\')) + 1 :]
+        if profile == "v3":
+            precure_relative = _v3_precure_relative(relative, target)
+            if precure_relative is not None:
+                relative = precure_relative
+            relative = _pin_v3_series_component(source["library_name"], relative)
         relative_dir, filename = ntpath.split(relative)
         if expected:
             filename = f"{expected} - {filename}"
