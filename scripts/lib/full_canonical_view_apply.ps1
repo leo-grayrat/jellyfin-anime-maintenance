@@ -31,17 +31,17 @@ function Invoke-FcvApplyBuild {
     )
 
     $BuildId = Get-Date -Format "yyyyMMdd-HHmmssfff"
-    $BuildTemp = [System.IO.Path]::Combine($TempRoot, "full-build-$BuildId")
-    $PlanPath = [System.IO.Path]::Combine($BuildTemp, "plan.csv")
-    $ManifestTempPath = [System.IO.Path]::Combine($BuildTemp, "full-manifest-v2.csv")
-    $BuildLogTempPath = [System.IO.Path]::Combine($BuildTemp, "full-build.csv")
-    $BuildLogPath = [System.IO.Path]::Combine($LogsRoot, "full-build-$BuildId.csv")
+    $BuildTemp = Join-FcvPathText -Left $TempRoot -Right "full-build-$BuildId"
+    $PlanPath = Join-FcvPathText -Left $BuildTemp -Right "plan.csv"
+    $ManifestTempPath = Join-FcvPathText -Left $BuildTemp -Right "full-manifest-v2.csv"
+    $BuildLogTempPath = Join-FcvPathText -Left $BuildTemp -Right "full-build.csv"
+    $BuildLogPath = Join-FcvPathText -Left $LogsRoot -Right "full-build-$BuildId.csv"
 
-    New-CvNativeDirectoryTree -Path $Root | Out-Null
-    New-CvNativeDirectoryTree -Path $ViewRoot | Out-Null
-    New-CvNativeDirectoryTree -Path $TempRoot | Out-Null
-    New-CvNativeDirectoryTree -Path $LogsRoot | Out-Null
-    New-CvNativeDirectoryTree -Path $BuildTemp | Out-Null
+    New-FcvNativeDirectoryTree -Path $Root | Out-Null
+    New-FcvNativeDirectoryTree -Path $ViewRoot | Out-Null
+    New-FcvNativeDirectoryTree -Path $TempRoot | Out-Null
+    New-FcvNativeDirectoryTree -Path $LogsRoot | Out-Null
+    New-FcvNativeDirectoryTree -Path $BuildTemp | Out-Null
 
     @($Preflight.Plan) | Export-Csv -LiteralPath $PlanPath -NoTypeInformation -Encoding UTF8
 
@@ -58,8 +58,8 @@ function Invoke-FcvApplyBuild {
             $wasMissing = ([string]$row.State -eq "MISSING")
 
             try {
-                $parent = [System.IO.Path]::GetDirectoryName([string]$row.CanonicalPath)
-                $newDirectories = @(New-CvNativeDirectoryTree -Path $parent)
+                $parent = Get-FcvDirectoryPath -Path ([string]$row.CanonicalPath)
+                $newDirectories = @(New-FcvNativeDirectoryTree -Path $parent)
                 foreach ($directory in $newDirectories) {
                     if (-not (Test-FcvPathUnderOrEqual -Path $directory -Root $ViewRoot)) { continue }
                     $directoryKey = Get-CvPathKey -Path $directory
@@ -74,10 +74,10 @@ function Invoke-FcvApplyBuild {
                 }
                 elseif ([string]$row.State -eq "MISSING") {
                     if ([string]$row.Operation -eq "HARDLINK") {
-                        New-CvNativeHardLink -Path ([string]$row.CanonicalPath) -Target ([string]$row.SourcePath) | Out-Null
+                        New-FcvNativeHardLink -Path ([string]$row.CanonicalPath) -Target ([string]$row.SourcePath) | Out-Null
                     }
                     elseif ([string]$row.Operation -eq "COPY") {
-                        Copy-CvNativeFile -Source ([string]$row.SourcePath) -Destination ([string]$row.CanonicalPath)
+                        Copy-FcvNativeFile -Source ([string]$row.SourcePath) -Destination ([string]$row.CanonicalPath)
                     }
                     else {
                         throw "Unsupported full-view operation: $($row.Operation)"
@@ -88,10 +88,10 @@ function Invoke-FcvApplyBuild {
                     throw "Unexpected full-view plan state: $($row.State)"
                 }
 
-                if (-not (Test-CvNativeFile -Path ([string]$row.CanonicalPath))) {
+                if (-not (Test-FcvNativeFile -Path ([string]$row.CanonicalPath))) {
                     throw "Canonical file is not visible after build step: $($row.CanonicalPath)"
                 }
-                $actualLength = Get-CvNativeFileLength -Path ([string]$row.CanonicalPath)
+                $actualLength = Get-FcvNativeFileLength -Path ([string]$row.CanonicalPath)
                 if ([long]$actualLength -ne [long]$row.SourceLength) {
                     throw "Canonical file length mismatch after build step: $($row.CanonicalPath)"
                 }
@@ -99,7 +99,7 @@ function Invoke-FcvApplyBuild {
                 [void]$buildRows.Add((New-FcvApplyManifestRow -PlanRow $row -BuildId $BuildId -Status $status))
             }
             catch {
-                if ($wasMissing -and (Test-CvNativeFile -Path ([string]$row.CanonicalPath))) {
+                if ($wasMissing -and (Test-FcvNativeFile -Path ([string]$row.CanonicalPath))) {
                     [void]$buildRows.Add((New-FcvApplyManifestRow -PlanRow $row -BuildId $BuildId -Status "CREATED"))
                 }
                 throw
@@ -118,11 +118,11 @@ function Invoke-FcvApplyBuild {
         $mergedManifest | Export-Csv -LiteralPath $ManifestTempPath -NoTypeInformation -Encoding UTF8
         @($buildRows) | Export-Csv -LiteralPath $BuildLogTempPath -NoTypeInformation -Encoding UTF8
 
-        Move-CvNativeFileReplace -Source $ManifestTempPath -Destination $FullManifestPath
+        Move-FcvNativeFileReplace -Source $ManifestTempPath -Destination $FullManifestPath
         $manifestCommitted = $true
 
         try {
-            Move-CvNativeFileReplace -Source $BuildLogTempPath -Destination $BuildLogPath
+            Move-FcvNativeFileReplace -Source $BuildLogTempPath -Destination $BuildLogPath
         }
         catch {
             Write-Warning ("Full manifest committed, but build log move failed: {0}" -f $_.Exception.Message)
@@ -138,7 +138,7 @@ function Invoke-FcvApplyBuild {
                     if (-not (Test-FcvPathUnderOrEqual -Path $path -Root $ViewRoot)) {
                         throw "Rollback destination escaped View root: $path"
                     }
-                    Remove-CvNativeFile -Path $path
+                    Remove-FcvNativeFile -Path $path
                 }
                 catch {
                     [void]$rollbackErrors.Add("file $path :: $($_.Exception.Message)")
@@ -150,7 +150,7 @@ function Invoke-FcvApplyBuild {
                     if (-not (Test-FcvPathUnderOrEqual -Path $directory -Root $ViewRoot)) {
                         throw "Rollback directory escaped View root: $directory"
                     }
-                    [void](Remove-CvNativeDirectoryIfEmpty -Path $directory)
+                    [void](Remove-FcvNativeDirectoryIfEmpty -Path $directory)
                 }
                 catch {
                     [void]$rollbackErrors.Add("directory $directory :: $($_.Exception.Message)")
