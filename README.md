@@ -48,17 +48,16 @@ Phase 1 生成器只处理当前 243 个已经确认的 correction targets：
 
 这一版仍是 partial view，不能单独替换生产 TV 库。
 
-Phase 2 已加入完整 TV View 生成器：243 个已确认目标使用显式 `SxxEyy`，其他生产 TV 文件原样透传，并保留 sidecar：
+Phase 2 的完整 TV View 已从未完成的 PowerShell 实现切换到 Python。当前 Python 版**只做 read-only inventory + mapping**，专门先查清 production filesystem 与 Jellyfin expanded Episode 的 676 基线差异：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass `
-    -File .\scripts\build_jellyfin_full_canonical_view.ps1 `
-    -ApiKey "<API_KEY>"
+python .\scripts\build_jellyfin_full_canonical_view.py `
+    --api-key "<API_KEY>"
 ```
 
-**目前先只运行测试和 dry-run。没有核对真实 Windows PowerShell 5.1 输出前，不要执行 Phase 2 的生产 `-Apply`，也不要切换 Jellyfin 生产媒体库根目录。**
+当前没有 `--apply`，不会创建完整 View，也不会修改 Jellyfin/NFO/SQLite。只有实际 dry-run 把文件全集和差集解释清楚后，才继续实现 Full View Apply。
 
-详细设计、manifest、回滚和生产切换边界见 `docs/canonical-view.md`。
+详细设计和当前边界见 `docs/canonical-view.md`。
 
 ### TV 动画统一审计导出
 
