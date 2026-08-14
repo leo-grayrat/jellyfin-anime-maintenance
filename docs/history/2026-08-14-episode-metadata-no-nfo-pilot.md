@@ -24,7 +24,7 @@ D:\Resource\BangumiLink\MetadataPilot-v3\2026年1月新番
 
 Series 目录仍保留已验证的 `[tmdbid-...]`，视频仍使用 `SxxEyy - ...`，唯一主动移除的变量是 NFO。
 
-## 2. 真实结果
+## 2. 真实结果：去掉 NFO 无变化
 
 用户在 Jellyfin 中新建独立 pilot TV 库，自然扫描后截图确认：结果与 v3 完全一致。
 
@@ -39,13 +39,9 @@ Series 目录仍保留已验证的 `[tmdbid-...]`，视频仍使用 `SxxEyy - ..
 
 ## 3. Jellyfin 12 当前源码解释
 
-### 3.1 remote provider 合并不会覆盖已有非空字段
+### 3.1 当前 Name / Overview 组合更像 provider 返回不完整，而不是文件结构错误
 
-`MetadataService.RefreshWithProviders` 调用 remote provider 时，将 provider 结果合并进临时 metadata 的 `replaceData` 设为 false。
-
-`MergeBaseItemData` 对 Name / Overview 的规则都是：只有 `replaceData=true` 或目标字段为空时才覆盖/填入。
-
-这说明已经由文件名产生的非空 Name 很容易保留下来，而空 Overview 可以被后续 provider 填入。
+`MetadataService.RefreshWithProviders` 使用新的临时 metadata item 收集 provider 结果。若 remote provider 没提供 Name，最终现有文件名式 Name 会继续存在；空 Overview 则可以被后续 provider 填入。
 
 ### 3.2 OMDb 恰好解释“英文简介有、标题没有”
 
@@ -59,33 +55,62 @@ Overview = English plot
 IMDb     = present
 ```
 
-与 OMDb 成功、TMDB Episode metadata 没有提供可采用结果的行为完全吻合。
+与 OMDb 成功、TMDB Episode metadata 没有提供可采用结果的行为高度吻合。
 
 对于 E06 / E07 连 Overview 都没有的情况，则说明 OMDb 对这些当前集数也没有返回可用 Episode 数据，或 lookup 未命中。
 
-### 3.3 当前最值得检查的是 TMDB language 参数
+## 4. language 假设也已被真实实验排除
 
-v3 验证库当前配置：
+曾怀疑 v3 验证库记录的：
 
 ```text
 PreferredMetadataLanguage = zh
 MetadataCountryCode = CN
 ```
 
-Jellyfin `TmdbUtils.NormalizeLanguage()` 对单独的 `zh` 不会结合 CountryCode 生成 `zh-CN`，而是原样返回 `zh`。TMDB Episode provider 又把这个值直接用于 Episode 请求。
+可能导致 Jellyfin 向 TMDB 传入不够明确的 `zh`。因此用户在独立 no-NFO pilot 库中把设置明确改为：
 
-因此下一项最低成本验证是：只修改临时 pilot 库，把 Preferred Metadata Language 改为明确的 `zh-CN` / Chinese (Simplified, China)，然后重新刷新这 4 集。
+```text
+Chinese (Simplified)
+People's Republic of China
+```
 
-这仍然只是待验证假设，不能在本地结果出来前定性。
+随后重新扫描，真实截图确认四个样本仍与此前完全一致：
 
-## 4. Fate/strange Fake 特别篇
+- Frieren S02E02：文件名式 Name + 英文 Overview；
+- Frieren S02E06：文件名式 Name + 无 Overview；
+- Oshi no Ko S03E02：文件名式 Name + 英文 Overview；
+- Oshi no Ko S03E07：文件名式 Name + 无 Overview。
+
+因此：
+
+> `zh` / `zh-CN` 语言设置差异不是当前残留问题的主因。不要继续通过改语言、删 NFO 或重做 View 试探。
+
+## 5. 当前最强结论
+
+到这里已经排除：
+
+- canonical 路径/S-E 结构；
+- sparse NFO；
+- `zh` 与明确简体中文设置差异。
+
+剩余问题已经收敛到 **remote Episode metadata lookup / provider 数据本身**：
+
+- TMDB 对 Frieren S2 / Oshi no Ko S3 的这些具体 Episode 是否返回有效 Name / Overview；
+- Jellyfin 构造的 EpisodeInfo（Series TMDB ID + season + episode + display order）是否和 TMDB 当前数据一致；
+- OMDb 为什么仅部分集有数据。
+
+下一步优先看真实 Jellyfin provider 日志 / 对应远程 endpoint，不再修改媒体文件布局。
+
+## 6. Fate/strange Fake 特别篇
 
 FSF 的 `Whispers of Dawn` 与上述问题分开处理。它在外部数据库中是独立 TV Movie，而不是当前 TV Series 的普通 Episode。因此把它放在 Series 的 `S00E01` 下时，不应期待常规 Series Episode lookup 自动获得完整 metadata；后续更适合做明确的本地 metadata 特例。
 
-## 5. 当前边界
+## 7. 当前边界
 
 - 不修改 v3 构建器；
 - 不再以删除 sparse NFO 作为修复方向；
+- 不再继续试验中文语言代码；
 - 不对生产库执行 ReplaceAll metadata；
-- 下一步只在临时 metadata pilot 库验证 `zh` 与 `zh-CN` 的差异；
-- 若 `zh-CN` 仍完全无变化，再直接诊断对应 TMDB Episode endpoint / Jellyfin lookup 输入，而不是继续改文件布局。
+- 下一步只读诊断 remote provider lookup / server logs；
+- 真实结论仍以本地 Windows + Jellyfin 12 结果为准。
