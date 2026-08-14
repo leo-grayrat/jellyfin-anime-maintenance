@@ -23,88 +23,27 @@ class FullCanonicalViewTests(unittest.TestCase):
             path = os.path.join(td, "targets.csv")
             fields = ["Work", "RuleId", "Action", "VideoPath", "Season", "Episode"]
             with open(path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=fields)
-                writer.writeheader()
-                writer.writerow(
-                    dict(
-                        Work="A",
-                        RuleId="r1",
-                        Action="WRITE",
-                        VideoPath=r"D:\TV\ep.mkv",
-                        Season="1",
-                        Episode="2",
-                    )
-                )
-                writer.writerow(
-                    dict(
-                        Work="A",
-                        RuleId="r2",
-                        Action="WRITE",
-                        VideoPath=r"D:\TV\ep.mkv",
-                        Season="1",
-                        Episode="2",
-                    )
-                )
-                writer.writerow(
-                    dict(
-                        Work="A",
-                        RuleId="series-nfo",
-                        Action="WRITE",
-                        VideoPath=r"D:\TV\series.mkv",
-                        Season="1",
-                        Episode="1",
-                    )
-                )
+                w = csv.DictWriter(f, fieldnames=fields)
+                w.writeheader()
+                w.writerow(dict(Work="A", RuleId="r1", Action="WRITE", VideoPath=r"D:\TV\ep.mkv", Season="1", Episode="2"))
+                w.writerow(dict(Work="A", RuleId="r2", Action="WRITE", VideoPath=r"D:\TV\ep.mkv", Season="1", Episode="2"))
+                w.writerow(dict(Work="A", RuleId="series-nfo", Action="WRITE", VideoPath=r"D:\TV\series.mkv", Season="1", Episode="1"))
             rows = fcv.load_targets(path, expected_count=1)
             self.assertEqual(rows[0]["expected_key"], "S01E02")
 
             with open(path, "a", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=fields)
-                writer.writerow(
-                    dict(
-                        Work="A",
-                        RuleId="r3",
-                        Action="WRITE",
-                        VideoPath=r"D:\TV\ep.mkv",
-                        Season="1",
-                        Episode="3",
-                    )
-                )
+                w = csv.DictWriter(f, fieldnames=fields)
+                w.writerow(dict(Work="A", RuleId="r3", Action="WRITE", VideoPath=r"D:\TV\ep.mkv", Season="1", Episode="3"))
             with self.assertRaises(ValueError):
                 fcv.load_targets(path, expected_count=-1)
 
     def test_mapping_renames_only_target_and_same_stem_sidecars(self):
         files = [
-            {
-                "library_name": "TV",
-                "library_root": r"D:\Bangumi",
-                "path": r"D:\Bangumi\Show\ep01.mkv",
-                "size": 1,
-            },
-            {
-                "library_name": "TV",
-                "library_root": r"D:\Bangumi",
-                "path": r"D:\Bangumi\Show\ep01.ass",
-                "size": 1,
-            },
-            {
-                "library_name": "TV",
-                "library_root": r"D:\Bangumi",
-                "path": r"D:\Bangumi\Show\ep01.nfo",
-                "size": 1,
-            },
-            {
-                "library_name": "TV",
-                "library_root": r"D:\Bangumi",
-                "path": r"D:\Bangumi\Show\ep02.mkv",
-                "size": 1,
-            },
-            {
-                "library_name": "TV",
-                "library_root": r"D:\Bangumi",
-                "path": r"D:\Bangumi\Show\poster.jpg",
-                "size": 1,
-            },
+            {"library_name": "TV", "library_root": r"D:\Bangumi", "path": r"D:\Bangumi\Show\ep01.mkv", "size": 1},
+            {"library_name": "TV", "library_root": r"D:\Bangumi", "path": r"D:\Bangumi\Show\ep01.ass", "size": 1},
+            {"library_name": "TV", "library_root": r"D:\Bangumi", "path": r"D:\Bangumi\Show\ep01.nfo", "size": 1},
+            {"library_name": "TV", "library_root": r"D:\Bangumi", "path": r"D:\Bangumi\Show\ep02.mkv", "size": 1},
+            {"library_name": "TV", "library_root": r"D:\Bangumi", "path": r"D:\Bangumi\Show\poster.jpg", "size": 1},
         ]
         target = {
             "video_path": r"D:\Bangumi\Show\ep01.mkv",
@@ -115,30 +54,11 @@ class FullCanonicalViewTests(unittest.TestCase):
         }
         rows = fcv.build_mapping(files, [target], r"D:\Resource\BangumiLink\View")
         by_source = {fcv.path_key(x["source_path"]): x for x in rows}
-        self.assertTrue(
-            by_source[fcv.path_key(r"D:\Bangumi\Show\ep01.mkv")]["canonical_path"].endswith(
-                r"S01E02 - ep01.mkv"
-            )
-        )
-        self.assertTrue(
-            by_source[fcv.path_key(r"D:\Bangumi\Show\ep01.ass")]["canonical_path"].endswith(
-                r"S01E02 - ep01.ass"
-            )
-        )
-        self.assertTrue(
-            by_source[fcv.path_key(r"D:\Bangumi\Show\ep01.nfo")]["canonical_path"].endswith(
-                r"S01E02 - ep01.nfo"
-            )
-        )
-        self.assertTrue(
-            by_source[fcv.path_key(r"D:\Bangumi\Show\ep02.mkv")]["canonical_path"].endswith(
-                r"ep02.mkv"
-            )
-        )
-        self.assertEqual(
-            by_source[fcv.path_key(r"D:\Bangumi\Show\poster.jpg")]["role"],
-            "PASSTHROUGH_FILE",
-        )
+        self.assertTrue(by_source[fcv.path_key(r"D:\Bangumi\Show\ep01.mkv")]["canonical_path"].endswith(r"S01E02 - ep01.mkv"))
+        self.assertTrue(by_source[fcv.path_key(r"D:\Bangumi\Show\ep01.ass")]["canonical_path"].endswith(r"S01E02 - ep01.ass"))
+        self.assertTrue(by_source[fcv.path_key(r"D:\Bangumi\Show\ep01.nfo")]["canonical_path"].endswith(r"S01E02 - ep01.nfo"))
+        self.assertTrue(by_source[fcv.path_key(r"D:\Bangumi\Show\ep02.mkv")]["canonical_path"].endswith(r"ep02.mkv"))
+        self.assertEqual(by_source[fcv.path_key(r"D:\Bangumi\Show\poster.jpg")]["role"], "PASSTHROUGH_FILE")
 
     def test_mapping_detects_collision(self):
         files = [
@@ -157,6 +77,13 @@ class FullCanonicalViewTests(unittest.TestCase):
         ]
         selected = fcv.select_production_locations(folders, fcv.DEFAULT_EXCLUDED_ROOTS)
         self.assertEqual([x["root"] for x in selected], [r"D:\Bangumi", r"E:\Anime"])
+
+    def test_parent_of_excluded_root_is_not_silently_dropped(self):
+        folders = [
+            {"Name": "Too Broad", "CollectionType": "tvshows", "Locations": ["D:\\"]},
+        ]
+        with self.assertRaisesRegex(ValueError, "contains an excluded root"):
+            fcv.select_production_locations(folders, fcv.DEFAULT_EXCLUDED_ROOTS)
 
     def test_expanded_episode_paths_are_paged_and_filtered_to_selected_roots(self):
         pages = [
