@@ -15,11 +15,36 @@ function Get-FcvNativePathText {
         $normalized = $normalized.Substring(4)
     }
 
-    if ($normalized -notmatch '^([A-Za-z]:\|\\[^\]+\[^\]+(?:\|$))') {
+    $isDriveAbsolute = $false
+    if ($normalized.Length -ge 3) {
+        $drive = $normalized[0]
+        $isLetter = (($drive -ge 'A' -and $drive -le 'Z') -or ($drive -ge 'a' -and $drive -le 'z'))
+        $isDriveAbsolute = $isLetter -and $normalized[1] -eq ':' -and $normalized[2] -eq '\'
+    }
+
+    $isUncAbsolute = $false
+    if ($normalized.StartsWith('\\', [System.StringComparison]::Ordinal)) {
+        $uncRemainder = $normalized.Substring(2)
+        $serverSeparator = $uncRemainder.IndexOf('\')
+        if ($serverSeparator -gt 0 -and $serverSeparator -lt ($uncRemainder.Length - 1)) {
+            $server = $uncRemainder.Substring(0, $serverSeparator)
+            $shareAndRest = $uncRemainder.Substring($serverSeparator + 1)
+            $shareSeparator = $shareAndRest.IndexOf('\')
+            if ($shareSeparator -lt 0) {
+                $share = $shareAndRest
+            }
+            else {
+                $share = $shareAndRest.Substring(0, $shareSeparator)
+            }
+            $isUncAbsolute = -not [string]::IsNullOrWhiteSpace($server) -and -not [string]::IsNullOrWhiteSpace($share)
+        }
+    }
+
+    if (-not $isDriveAbsolute -and -not $isUncAbsolute) {
         throw "Expected an absolute Windows path: $Path"
     }
 
-    foreach ($segment in @($normalized -split '\')) {
+    foreach ($segment in @($normalized -split '\\')) {
         if ($segment -eq '.' -or $segment -eq '..') {
             throw "Path must already be normalized and may not contain dot segments: $Path"
         }
@@ -168,7 +193,7 @@ function New-FcvNativeDirectoryTree {
 
     $current = $rootTrimmed
     $created = New-Object System.Collections.ArrayList
-    foreach ($segment in @($relative -split '\')) {
+    foreach ($segment in @($relative -split '\\')) {
         if ([string]::IsNullOrWhiteSpace($segment)) { continue }
         $current = Join-FcvPathText -Left $current -Right $segment
         if (-not (Test-FcvNativeDirectory -Path $current)) {
