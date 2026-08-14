@@ -120,8 +120,9 @@ def _location_keys(folder: dict) -> set[str]:
     }
 
 
-def build_plan(targets: Sequence[dict], virtual_folders) -> list[dict]:
+def build_plan(targets: Sequence[dict], virtual_folders, template_name: str = "") -> list[dict]:
     existing = flatten_virtual_folders(virtual_folders)
+    template_key = str(template_name or "").strip().casefold()
     plan: list[dict] = []
 
     for target in targets:
@@ -142,8 +143,14 @@ def build_plan(targets: Sequence[dict], virtual_folders) -> list[dict]:
             )
 
         path_owners = [folder for folder in existing if target_key in _location_keys(folder)]
-        if path_owners:
-            owner = path_owners[0]
+        blocking_owners = [
+            folder
+            for folder in path_owners
+            if not template_key
+            or str(folder.get("Name", "")).strip().casefold() != template_key
+        ]
+        if blocking_owners:
+            owner = blocking_owners[0]
             raise ValueError(
                 f"same library path already belongs to another library: {path} :: {owner.get('Name')}"
             )
@@ -220,7 +227,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     virtual_folders = jellyfin_request(args.server, args.api_key, "GET", "/Library/VirtualFolders")
     template = find_template(virtual_folders, args.template_library)
     targets = discover_targets(args.view_root)
-    plan = build_plan(targets, virtual_folders)
+    plan = build_plan(targets, virtual_folders, template_name=template["Name"])
     print_plan(template, args.view_root, plan)
 
     if not args.apply:
@@ -230,7 +237,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Re-read immediately before mutation so stale library state cannot silently overwrite the plan.
     virtual_folders = jellyfin_request(args.server, args.api_key, "GET", "/Library/VirtualFolders")
     template = find_template(virtual_folders, args.template_library)
-    plan = build_plan(targets, virtual_folders)
+    plan = build_plan(targets, virtual_folders, template_name=template["Name"])
     created = apply_plan(args.server, args.api_key, template["LibraryOptions"], plan)
     print(f"\nCreated {created} grouped libraries.")
     if created:
