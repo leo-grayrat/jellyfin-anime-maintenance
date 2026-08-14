@@ -150,6 +150,10 @@ finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+$helperText = [System.IO.File]::ReadAllText($helperPath)
+Assert-True ($helperText.IndexOf("CreateFileW", [System.StringComparison]::OrdinalIgnoreCase) -ge 0) "helper opens NFO through CreateFileW"
+Assert-True ($helperText.IndexOf("new FileStream(extended", [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "helper does not pass extended path back to FileStream"
+
 $exporterPath = Join-Path $PSScriptRoot "..\scripts\export_jellyfin_tv_audit_12.ps1"
 if (-not (Test-Path -LiteralPath $exporterPath -PathType Leaf)) {
     throw "TV audit exporter not implemented yet: $exporterPath"
