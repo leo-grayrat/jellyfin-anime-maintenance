@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Input,
+    [Alias("Input")]
+    [string]$InputPath,
 
     [string]$OutputCsv = "",
 
@@ -71,7 +72,7 @@ function Add-AuditLabel {
     }
 }
 
-$inputFull = [System.IO.Path]::GetFullPath($Input)
+$inputFull = [System.IO.Path]::GetFullPath($InputPath)
 if (-not (Test-Path -LiteralPath $inputFull -PathType Leaf)) {
     throw "Audit JSON not found: $inputFull"
 }
