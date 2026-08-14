@@ -50,6 +50,45 @@ try {
                 ImageTags = [pscustomobject]@{}
             },
             [pscustomobject]@{
+                Type = "Season"
+                Id = "season-a1"
+                SeriesId = "series-a"
+                SeriesName = "Series A"
+                LibraryName = "TV"
+                IndexNumber = 1
+                Name = "Season 1"
+                Path = ""
+                ProviderIds = [pscustomobject]@{}
+                Overview = ""
+                ImageTags = [pscustomobject]@{}
+            },
+            [pscustomobject]@{
+                Type = "Season"
+                Id = "season-bad"
+                SeriesId = "series-a"
+                SeriesName = "Series A"
+                LibraryName = "TV"
+                IndexNumber = 2026
+                Name = "Season 2026"
+                Path = ""
+                ProviderIds = [pscustomobject]@{}
+                Overview = ""
+                ImageTags = [pscustomobject]@{}
+            },
+            [pscustomobject]@{
+                Type = "Season"
+                Id = "season-extra"
+                SeriesId = "series-a"
+                SeriesName = "Series A"
+                LibraryName = "TV"
+                IndexNumber = $null
+                Name = "Bonus"
+                Path = "D:\TV\Series A\Bonus"
+                ProviderIds = [pscustomobject]@{}
+                Overview = ""
+                ImageTags = [pscustomobject]@{}
+            },
+            [pscustomobject]@{
                 Type = "Episode"
                 Id = "ep-a1"
                 SeriesId = "series-a"
@@ -173,10 +212,20 @@ try {
     Assert-True (Test-Path -LiteralPath $summaryPath -PathType Leaf) "summary created"
 
     $rows = @(Import-Csv -LiteralPath $csvPath)
-    Assert-Equal $rows.Count 5 "test library excluded and filesystem-only row kept"
+    Assert-Equal $rows.Count 8 "test library excluded and season rows included"
 
     $series = $rows | Where-Object { $_.ItemType -eq "Series" -and $_.SeriesId -eq "series-a" }
     Assert-True ($series.IssueLabels -match "SERIES_METADATA_MISSING_PRIMARY_IMAGE") "series image issue"
+
+    $standardSeason = $rows | Where-Object { $_.ItemId -eq "season-a1" }
+    Assert-Equal $standardSeason.IssueLabels "" "standard season clean"
+
+    $badSeason = $rows | Where-Object { $_.ItemId -eq "season-bad" }
+    Assert-True ($badSeason.IssueLabels -match "STRUCTURE_SUSPICIOUS_SEASON_NUMBER") "suspicious season number"
+
+    $extraSeason = $rows | Where-Object { $_.ItemId -eq "season-extra" }
+    Assert-True ($extraSeason.IssueLabels -match "STRUCTURE_SEASON_MISSING_INDEX") "extra season missing index"
+    Assert-True ($extraSeason.IssueLabels -match "REVIEW_EXTRAS") "extra season review"
 
     $visible = $rows | Where-Object { $_.ItemId -eq "ep-a1" }
     Assert-Equal $visible.VisibleInNormalView "True" "visible episode"
@@ -198,6 +247,7 @@ try {
     Assert-True ($orphan.IssueLabels -match "FILESYSTEM_NOT_IN_JELLYFIN") "filesystem-only issue"
 
     $summary = [System.IO.File]::ReadAllText($summaryPath)
+    Assert-True ($summary -match "Season rows: 3") "summary season count"
     Assert-True ($summary -match "Correction-target NFO rows: 2") "summary correction count"
     Assert-True ($summary -match "Hidden Episode rows: 2") "summary hidden count"
 }
