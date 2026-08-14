@@ -37,4 +37,13 @@ Assert-True ($text -match 'Method Post') "Apply performs one Jellyfin refresh PO
 Assert-True ($text -notmatch 'Method (Delete|Put|Patch)') "no destructive API methods"
 Assert-True ($text -notmatch 'Remove-Item|Move-Item|Rename-Item|Set-Content|Out-File') "no media or NFO mutation commands"
 
+# Jellyfin 12 BaseItemDto no longer exposes these observation fields even though
+# ItemFields still contains their enum names. The pilot must not wait on them.
+Assert-True ($text -notmatch 'DateLastSaved') "do not depend on removed DateLastSaved DTO field"
+Assert-True ($text -notmatch 'DateLastRefreshed') "do not depend on removed DateLastRefreshed DTO field"
+Assert-True ($text -notmatch 'RefreshState') "do not depend on removed RefreshState DTO field"
+Assert-True ($text -notmatch 'Timed out waiting for the Episode metadata refresh to save') "no false timeout on unavailable timestamps"
+Assert-True ($text -match 'RESULT: NAME_UNCHANGED_AFTER_OBSERVATION') "bounded unchanged observation result"
+Assert-True ($text -match 'refresh completion cannot be proven from BaseItemDto') "explicit observation limitation"
+
 Write-Host "PASS: Medalist metadata replacement pilot safety contract"
