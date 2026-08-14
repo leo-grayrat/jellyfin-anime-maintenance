@@ -43,7 +43,7 @@ v2 验证库 `D:\Resource\BangumiLink\View\2026年1月新番` 中：
 
 v2 同时暴露了三类集中残留：四个 Series 网络身份不稳定、《名探偵プリキュア！》单集目录形成额外 Season、78 个语言后缀字幕未跟随 correction video。
 
-## v3：文件层已完成
+## v3：文件层与结构验证均已完成
 
 入口：
 
@@ -97,26 +97,34 @@ Rows to create:     0
 Conflicts:          0
 ```
 
-因此 **v3 文件层已经完成，不再继续修改构建器，除非后续 Jellyfin 验证发现新的实际结构问题。**
-
-## 当前下一步：Jellyfin v3 独立验证
-
-新建一个独立 TV 验证库，只挂载：
+随后建立 `验证-v3-2026年1月`，只挂载 `View-v3\2026年1月新番`。真实 Jellyfin 12 扫描结果：
 
 ```text
-D:\Resource\BangumiLink\View-v3\2026年1月新番
+Filesystem videos:  186
+Expanded Episodes:   185
+Normal Episodes:     180
 ```
 
-不要修改现有生产库，也先保留 v2 验证库便于对照。第一次自然扫描后重点检查：
+正确解释：175 个 Episode 各 1 个版本，5 个 Episode 各 2 个真实版本，共 185 个 Episode media paths；第 186 个物理视频是已经正确放进 `extras` 的光美 NCOP，不再属于 Episode。
 
-- 186 个物理视频是否全部可追踪；
-- normal Episode 是否仍为 181，5 个差值是否仍是真实多版本；
-- 《名探偵プリキュア！》是否只剩正常 Season 01；
-- `NCOP_ED_01` 是否不再成为 S01E11；
-- 四个 `[tmdbid-...]` Series 是否获得正确网络身份；
-- 语言后缀字幕是否挂到对应 Episode。
+同时：
 
-通过后再讨论生产切换。生产切换仍只涉及 9 个 D 盘 TV roots；`C:\bangumi` 保持原样。
+- 光美原先 27 个额外 Season-like 容器消失；
+- NCOP 不再冒充 S01E11；
+- Fate / Medalist / 我推 / 芙莉莲四个 Series provider identity 均已正确；
+- 剩余标题和 Overview 缺失已经是 metadata/provider lookup 问题，不是 canonical path 结构问题。
+
+因此 **v3 构建器和路径布局到此冻结，不再为 metadata 问题制造 v4。**
+
+## 当前下一步：Episode metadata（Issue #5）
+
+当前集中残留：
+
+- 芙莉莲 Season 2、我推 Season 3 的 Series 已正确识别，但 Season provider identity 为空，Episode Name 仍是 canonical 文件名，Overview 只部分获得；
+- FSF Season 1 正常，但 Season 0 / `Whispers of Dawn` 无 Episode provider metadata；
+- correction NFO 仍是只写 Season/Episode 的 sparse NFO。
+
+下一步只做 metadata 层的受控实验和修复，不再改变 canonical layout。生产切换仍只涉及 9 个 D 盘 TV roots；`C:\bangumi` 保持原样。
 
 ## 安全边界
 
@@ -126,6 +134,6 @@ D:\Resource\BangumiLink\View-v3\2026年1月新番
 - `C:\bangumi` 42 个正式杂项 TV 不进入 D 盘 hardlink View；
 - 不直接写 Jellyfin SQLite；
 - 不自动修复全部 33 个 non-target hidden/extras；
-- Episode 标题、Overview、Provider metadata 属于另一层问题；
-- v3 Jellyfin 验证完成前，不切换生产 roots；
+- Episode 标题、Overview、Provider metadata 与 canonical 文件布局分层处理；
+- 生产 roots 切换前仍需单独确认切换策略；
 - 真实结论以本地 Windows + NTFS + Jellyfin 12 输出为准。
