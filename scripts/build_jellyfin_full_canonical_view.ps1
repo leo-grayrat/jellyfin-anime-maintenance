@@ -16,6 +16,7 @@ $Server = $Server.TrimEnd('/')
 $Root = [System.IO.Path]::GetFullPath($Root)
 $ProductionRoot = [System.IO.Path]::GetFullPath($ProductionRoot)
 $ViewRoot = [System.IO.Path]::Combine($Root, "View")
+$TempRoot = [System.IO.Path]::Combine($Root, "Temp")
 $LogsRoot = [System.IO.Path]::Combine($Root, "Logs")
 $Phase1ManifestPath = [System.IO.Path]::Combine($LogsRoot, "manifest.csv")
 $FullManifestPath = [System.IO.Path]::Combine($LogsRoot, "full-manifest-v2.csv")
@@ -23,7 +24,8 @@ $FullManifestPath = [System.IO.Path]::Combine($LogsRoot, "full-manifest-v2.csv")
 $canonicalCommon = Join-Path $PSScriptRoot "lib\canonical_view_common.ps1"
 $auditCommon = Join-Path $PSScriptRoot "lib\tv_audit_common.ps1"
 $fullCommon = Join-Path $PSScriptRoot "lib\full_canonical_view_common.ps1"
-foreach ($helper in @($canonicalCommon, $auditCommon, $fullCommon)) {
+$applyCommon = Join-Path $PSScriptRoot "lib\full_canonical_view_apply.ps1"
+foreach ($helper in @($canonicalCommon, $auditCommon, $fullCommon, $applyCommon)) {
     if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
         throw "Required helper not found: $helper"
     }
@@ -31,6 +33,7 @@ foreach ($helper in @($canonicalCommon, $auditCommon, $fullCommon)) {
 . $canonicalCommon
 . $auditCommon
 . $fullCommon
+. $applyCommon
 
 $Headers = @{
     Authorization = "MediaBrowser Client=`"full-canonical-view-builder`", Device=`"PowerShell`", DeviceId=`"full-canonical-view-builder`", Version=`"1.0`", Token=`"$ApiKey`""
@@ -242,7 +245,7 @@ function Write-FcvPreflightSummary {
 
 Write-Host ""
 Write-Host "=== Jellyfin Full Canonical View Builder ==="
-if ($Apply) { Write-Host "Mode: APPLY PRECHECK" } else { Write-Host "Mode: DRY RUN" }
+if ($Apply) { Write-Host "Mode: APPLY" } else { Write-Host "Mode: DRY RUN" }
 Write-Host "Production root: $ProductionRoot"
 Write-Host "View root: $ViewRoot"
 
@@ -261,4 +264,26 @@ if (-not $Apply) {
     exit 0
 }
 
-throw "Apply is not enabled in this commit. Full preflight completed without filesystem writes."
+Write-Host ""
+Write-Host "Re-running full preflight before Apply..."
+$preflight = Invoke-FcvPreflight
+Write-FcvPreflightSummary -Result $preflight
+
+$applyResult = Invoke-FcvApplyBuild `
+    -Preflight $preflight `
+    -Root $Root `
+    -ViewRoot $ViewRoot `
+    -TempRoot $TempRoot `
+    -LogsRoot $LogsRoot `
+    -FullManifestPath $FullManifestPath
+
+Write-Host ""
+Write-Host "=== Full View Apply complete ==="
+Write-Host ("Build id:            {0}" -f [string]$applyResult.BuildId)
+Write-Host ("Plan rows:           {0}" -f [int]$applyResult.PlanCount)
+Write-Host ("Created rows:        {0}" -f [int]$applyResult.CreatedCount)
+Write-Host ("Reused rows:         {0}" -f [int]$applyResult.ReusedCount)
+Write-Host ("Manifest:            {0}" -f [string]$applyResult.ManifestPath)
+Write-Host ("Build log:           {0}" -f [string]$applyResult.BuildLogPath)
+Write-Host "Source files were not renamed, moved, overwritten, or deleted."
+Write-Host "Jellyfin production library roots were not changed."
