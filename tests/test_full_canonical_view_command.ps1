@@ -6,16 +6,18 @@ function Assert-True {
 }
 
 $commandPath = Join-Path $PSScriptRoot "..\scripts\build_jellyfin_full_canonical_view.ps1"
+$commonPath = Join-Path $PSScriptRoot "..\scripts\lib\full_canonical_view_common.ps1"
 $applyPath = Join-Path $PSScriptRoot "..\scripts\lib\full_canonical_view_apply.ps1"
-foreach ($path in @($commandPath, $applyPath)) {
+foreach ($path in @($commandPath, $commonPath, $applyPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Expected full canonical view implementation file does not exist: $path"
     }
 }
 
 $source = [System.IO.File]::ReadAllText($commandPath)
+$commonSource = [System.IO.File]::ReadAllText($commonPath)
 $applySource = [System.IO.File]::ReadAllText($applyPath)
-$combined = $source + "`n" + $applySource
+$combined = $source + "`n" + $commonSource + "`n" + $applySource
 
 foreach ($required in @(
     '[string]$ProductionRoot = "D:\Bangumi"',
@@ -38,14 +40,24 @@ foreach ($required in @(
 
 foreach ($required in @(
     'full-build-',
-    'New-CvNativeHardLink',
-    'Copy-CvNativeFile',
-    'Move-CvNativeFileReplace',
+    'New-FcvNativeHardLink',
+    'Copy-FcvNativeFile',
+    'Move-FcvNativeFileReplace',
     'Rollback',
     'Get-FcvRollbackPaths',
-    'New-CvNativeDirectoryTree -Path $Root'
+    'New-FcvNativeDirectoryTree -Path $Root'
 )) {
     Assert-True ($applySource.Contains($required)) "apply source contains $required"
+}
+
+foreach ($required in @(
+    'Get-FcvNativePathText',
+    'Get-FcvDirectoryPath',
+    '[CvNativeFileSystem]::CreateHardLink',
+    '[CvNativeFileSystem]::CopyFile',
+    '[CvNativeFileSystem]::MoveReplace'
+)) {
+    Assert-True ($commonSource.Contains($required)) "full helper contains native-safe wrapper $required"
 }
 
 foreach ($forbidden in @(
@@ -74,18 +86,23 @@ $dryRunIndex = $source.IndexOf('if (-not $Apply)', [System.StringComparison]::Or
 $applyIndex = $source.IndexOf('Invoke-FcvApplyBuild', [System.StringComparison]::OrdinalIgnoreCase)
 Assert-True ($dryRunIndex -ge 0) "command has dry-run gate"
 Assert-True ($applyIndex -gt $dryRunIndex) "Apply transaction is called only after dry-run exit"
-Assert-True ($source.IndexOf('New-CvNativeDirectoryTree -Path $Root', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "command preflight layer does not create filesystem directories"
+Assert-True ($source.IndexOf('New-FcvNativeDirectoryTree -Path $Root', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "command preflight layer does not create filesystem directories"
 
 $manifestTempIndex = $applySource.IndexOf('$ManifestTempPath', [System.StringComparison]::OrdinalIgnoreCase)
-$manifestMoveIndex = $applySource.IndexOf('Move-CvNativeFileReplace -Source $ManifestTempPath -Destination $FullManifestPath', [System.StringComparison]::OrdinalIgnoreCase)
+$manifestMoveIndex = $applySource.IndexOf('Move-FcvNativeFileReplace -Source $ManifestTempPath -Destination $FullManifestPath', [System.StringComparison]::OrdinalIgnoreCase)
 Assert-True ($manifestTempIndex -ge 0) "apply stages manifest temp"
 Assert-True ($manifestMoveIndex -gt $manifestTempIndex) "manifest replacement happens after temp creation"
-Assert-True ($applySource.IndexOf('Remove-CvNativeFile -Path $FullManifestPath', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "old manifest is never deleted before replace"
+Assert-True ($applySource.IndexOf('Remove-FcvNativeFile -Path $FullManifestPath', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "old manifest is never deleted before replace"
 
 $rollbackCheckIndex = $applySource.IndexOf('Test-FcvPathUnderOrEqual -Path $path -Root $ViewRoot', [System.StringComparison]::OrdinalIgnoreCase)
-$rollbackRemoveIndex = $applySource.IndexOf('Remove-CvNativeFile -Path $path', [System.StringComparison]::OrdinalIgnoreCase)
+$rollbackRemoveIndex = $applySource.IndexOf('Remove-FcvNativeFile -Path $path', [System.StringComparison]::OrdinalIgnoreCase)
 Assert-True ($rollbackCheckIndex -ge 0) "rollback verifies destination stays under View"
 Assert-True ($rollbackRemoveIndex -gt $rollbackCheckIndex) "rollback validates path before file removal"
+
+Assert-True ($applySource.IndexOf('[System.IO.Path]::GetFullPath', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "apply avoids MAX_PATH-sensitive GetFullPath"
+Assert-True ($applySource.IndexOf('[System.IO.Path]::GetDirectoryName', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "apply avoids MAX_PATH-sensitive GetDirectoryName"
+Assert-True ($commonSource.IndexOf('[System.IO.Path]::GetFullPath', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "full helper avoids MAX_PATH-sensitive GetFullPath"
+Assert-True ($commonSource.IndexOf('[System.IO.Path]::GetDirectoryName', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "full helper avoids MAX_PATH-sensitive GetDirectoryName"
 
 Assert-True ($combined.IndexOf('Set-Cv', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "implementation does not contain hidden source mutation helper"
 Assert-True ($source.IndexOf('/Library/VirtualFolders?', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "command does not mutate library roots"
