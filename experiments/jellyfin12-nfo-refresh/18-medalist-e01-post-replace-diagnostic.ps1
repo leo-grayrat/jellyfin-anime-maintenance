@@ -162,8 +162,19 @@ Write-ProviderIds -Item $series -Indent "  "
 Write-Host ""
 
 Write-Host "--- Recent Jellyfin log context ---"
-$logs = @(Invoke-JfGetJson -Uri "$Server/System/Logs")
-$selectedLogs = @($logs | Sort-Object { [datetime]$_.DateModified } -Descending | Select-Object -First $MaxLogs)
+$logs = Invoke-JfGetJson -Uri "$Server/System/Logs"
+$selectedLogs = @()
+
+# Jellyfin already returns /System/Logs ordered by DateModified descending.
+# Enumerate explicitly instead of piping the Invoke-RestMethod array through
+# Sort-Object; Windows PowerShell 5.1 may otherwise expose the JSON array as a
+# single Object[] and make $_.DateModified an Object[].
+foreach ($candidateLog in $logs) {
+    $selectedLogs += $candidateLog
+    if ($selectedLogs.Count -ge $MaxLogs) {
+        break
+    }
+}
 
 if ($selectedLogs.Count -eq 0) {
     Write-Host "No server log files were returned by /System/Logs."
