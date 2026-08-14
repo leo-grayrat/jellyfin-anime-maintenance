@@ -1,6 +1,6 @@
 # 2026-08-14 Jellyfin 上游 issue 候选记录
 
-本文件只记录在本次 Jellyfin 12.0.0 排障过程中出现的、未来可能值得向 `jellyfin/jellyfin` 上游报告的问题。当前均先标记为 **候选**，不在尚未完成归因前直接提交上游 issue。
+本文件记录本次 Jellyfin 12.0.0 排障过程中出现的、未来可能值得向 `jellyfin/jellyfin` 上游报告的问题，以及后来被证据排除的候选。当前只有候选 1 仍保留为真正的 Jellyfin 上游 issue 候选。
 
 ## 候选 1：ReplaceAll 在 provider metadata 不完整时可能造成既有字段丢失
 
@@ -36,35 +36,19 @@
 
 ---
 
-## 候选 2：正确 Series / S-E 下，TmdbEpisodeProvider 仍可能返回 no metadata
+## 已排除候选 2：正确 Series / S-E 下，TmdbEpisodeProvider 返回 no metadata
 
 ### 初始现象
 
 在全新的 no-NFO 独立测试库第一次自然扫描后：
 
-- Series 已通过 `[tmdbid-...]` 正确固定身份；
+- Series 通过 `[tmdbid-...]` 固定身份；
 - S/E 文件命名正确；
 - Jellyfin 能创建正确 Season；
 - Frieren S2 / Oshi no Ko S3 的 Episode Name 仍保持文件名；
 - 一部分 Episode 只获得英文 Overview / IMDb ID / 评分；另一部分连 Overview 也没有。
 
-删除 sparse NFO 后，第一次自然扫描行为仍与 v3 一样，所以 NFO 不是必要条件。
-
-### 22:29 Debug 日志修正了一个误判
-
-用户把 pilot 库语言改为 `Chinese (Simplified)` + `People's Republic of China` 后普通扫描，界面无变化。但 Debug 日志只出现 Series 级 `TmdbMissingEpisodeProvider`，没有运行 `TmdbEpisodeProvider` / `OmdbEpisodeProvider`。
-
-因此“改语言后普通扫描无变化”不能当成 Episode provider 失败证据；普通增量扫描没有重跑 Episode remote provider 更像正常语义。
-
-### 22:39 新证据：单 Episode FullRefresh 确认 TMDB no metadata
-
-随后用户对 no-NFO pilot 的 Frieren S02E06 单独执行：
-
-```text
-刷新元数据 -> 搜索缺少的元数据
-```
-
-对应 `FullRefresh + replaceAllMetadata=false`。真实 Debug 日志明确出现：
+删除 sparse NFO 后行为不变。随后对 Frieren S02E06 单独执行 `FullRefresh + replaceAllMetadata=false`，真实 Debug 日志明确出现：
 
 ```text
 Running "EpisodeNfoProvider" for ...S02E06...
@@ -74,47 +58,47 @@ Running "TmdbEpisodeProvider" for ...S02E06...
 Running "OmdbEpisodeProvider" for ...S02E06...
 ```
 
-界面刷新后仍没有变化。
+一度怀疑 Jellyfin 的 Episode lookup 输入有 bug。
 
-这使候选 2 明显变强：
+### 最终归因：TMDB 的数据模型与本地季数模型不一致
 
-- NFO 干扰已经排除；
-- 这次不是普通扫描，`TmdbEpisodeProvider` 确实被强制执行；
-- Jellyfin 对这个实际物理 Episode 明确得到 `HasMetadata=false`；
-- Series 目录 pin 为 TMDB `209867`，文件名明确是 `S02E06`；
-- 外部公开资料独立确认 Frieren 第2期第6话真实存在，并已在 2026-02-27 播出。
+继续核对 TMDB 后发现，问题并不是 Jellyfin 明明查询到存在的 S/E 却返回空，而是我们本地使用的“第 2 季 / 第 3 季”编号与 TMDB 对这些动画的组织方式不一致。
 
-### 为什么现在仍只叫“候选”
+#### Frieren
 
-`TmdbEpisodeProvider.GetMetadata()` 最终调用：
+本地 v3 把 `葬送のフリーレン 第2期` pin 到原 Series TMDB `209867`，同时视频仍标为 `S02E01...`。
+
+但 TMDB 当前对原 Series `209867` 的第二季并没有这些实际 Episode；用户进一步确认，第二期在 TMDB 中作为另一个独立 TV 条目存在（`327813`）。因此 Jellyfin 对：
 
 ```text
-GetEpisodeAsync(seriesTmdbId, seasonNumber, episodeNumber,
-                SeriesDisplayOrder, MetadataLanguage,
-                imageLanguages, MetadataCountryCode)
+series = 209867
+season = 2
+episode = 6
 ```
 
-当前 Debug 日志没有打印这些参数的最终值，也没有直接显示 TMDB endpoint 响应。因此仍有两类根因没有区分：
+得到 `TmdbEpisodeProvider returned no metadata` 是符合外部数据库当前状态的。
 
-1. Jellyfin 构造/传递的 lookup input 有问题，例如 `SeriesDisplayOrder`、language/country 或其他参数造成错误查询；
-2. lookup input 正确，但 TMDB 当前 endpoint 对该请求本身返回空/null。
+#### Oshi no Ko
 
-只有在确认 TMDB 当前确实有对应 S02E06 数据、并且 Jellyfin lookup input 正确后，才能把它提升成明确的 Jellyfin 上游 bug。
+TMDB `203737` 并不按本地的 Season 1 / Season 2 / Season 3 方式组织。已存在内容被放在同一个 Season 1 下连续编号；用户确认 TMDB 当前也没有与本地“第 2 季 / 第 3 季”一一对应的独立 Series 条目。
 
-### 当前下一步
+因此本地 `S03E07` 去请求 TMDB `203737 / season 3 / episode 7` 时得到空，也不能归因为 Jellyfin bug。
 
-只读完成两件事：
+### 结论
 
-1. 核对 TMDB 当前 `209867 / season 2 / episode 6` 以及 `203737 / season 3 / episode 7` 的真实数据；
-2. 导出 Jellyfin 对相同 Episode 的实际 lookup input，重点看 `SeriesDisplayOrder`、MetadataLanguage、MetadataCountryCode、season、episode。
+候选 2 **不再视为 Jellyfin 上游 issue**。真正问题是：
 
-如果 TMDB 有数据而 Jellyfin 仍返回 no metadata，候选 2 就可以转成可复现的上游 issue。
+> 本地为了符合动画观看习惯而采用的“第 X 季”编号，与 TMDB 对某些日本动画采用的“独立 Series / 连续 Episode / 非传统 Season”建模不一致。
+
+这属于 metadata source schema mismatch，而不是目前已有证据能够支持的 Jellyfin provider bug。
+
+这也意味着 v3 中对 Frieren / Oshi no Ko 的 TMDB pin 不能继续简单理解为“固定正确 Series ID 后 TMDB 就能按本地 SxxEyy 自动补全 Episode metadata”。后续主线应该决定如何在保留本地季数展示的前提下补齐 metadata，而不是继续追 Jellyfin provider issue。
 
 ---
 
 ## 当前原则
 
-- 两个候选都先存档，不立即上游提 issue；
-- 后续主线排障产生的新证据继续补到本文件；
-- 对已经被新证据推翻的中间结论要明确修正；
-- 最终若确认，需要分别写复现步骤、预期行为、实际行为、版本、日志和源码定位，避免把不同根因混成一个 issue。
+- 候选 1 保留，暂不提交上游；
+- 候选 2 已由外部数据库建模不一致解释，明确标记为排除；
+- 后续如果发现新的上游候选，仍要求先把 Jellyfin 行为和外部 provider 数据本身区分开；
+- 最终若提交 issue，需要分别写复现步骤、预期行为、实际行为、版本、日志和源码定位，避免把 provider 数据缺失误报成 Jellyfin bug。
