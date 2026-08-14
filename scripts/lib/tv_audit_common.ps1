@@ -74,6 +74,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 public sealed class TvaFileEntry
 {
@@ -87,6 +88,12 @@ public static class TvaNativeFileSystem
     private const uint INVALID_FILE_ATTRIBUTES = 0xFFFFFFFF;
     private const uint FILE_ATTRIBUTE_DIRECTORY = 0x10;
     private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x400;
+    private const uint FILE_ATTRIBUTE_NORMAL = 0x80;
+    private const uint GENERIC_READ = 0x80000000;
+    private const uint FILE_SHARE_READ = 0x00000001;
+    private const uint FILE_SHARE_WRITE = 0x00000002;
+    private const uint FILE_SHARE_DELETE = 0x00000004;
+    private const uint OPEN_EXISTING = 3;
     private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -117,6 +124,16 @@ public static class TvaNativeFileSystem
 
     [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint GetFileAttributesW(string lpFileName);
+
+    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFileW(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile);
 
     private static string ToExtendedPath(string path)
     {
@@ -227,10 +244,28 @@ public static class TvaNativeFileSystem
     public static string ReadAllText(string path)
     {
         string extended = ToExtendedPath(path);
-        using (FileStream stream = new FileStream(extended, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, true))
+        uint shareMode = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+
+        using (SafeFileHandle handle = CreateFileW(
+            extended,
+            GENERIC_READ,
+            shareMode,
+            IntPtr.Zero,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            IntPtr.Zero))
         {
-            return reader.ReadToEnd();
+            if (handle.IsInvalid)
+            {
+                int error = Marshal.GetLastWin32Error();
+                throw new Win32Exception(error, "CreateFileW failed for " + path);
+            }
+
+            using (FileStream stream = new FileStream(handle, FileAccess.Read))
+            using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, true))
+            {
+                return reader.ReadToEnd();
+            }
         }
     }
 }
@@ -341,16 +376,16 @@ function Get-TvaVideoFiles {
         }
 
         $result += [pscustomobject]@{
-            LibraryName       = $LibraryName
-            LibraryRoot       = $LibraryRoot
-            Path              = $entryPath
-            Extension         = $extension
-            Length            = [long]$entry.Length
-            LastWriteTime     = ([datetime]$entry.LastWriteTimeUtc).ToLocalTime().ToString("o")
-            SameNameNfoPath   = $nfoPath
+            LibraryName        = $LibraryName
+            LibraryRoot        = $LibraryRoot
+            Path               = $entryPath
+            Extension          = $extension
+            Length             = [long]$entry.Length
+            LastWriteTime      = ([datetime]$entry.LastWriteTimeUtc).ToLocalTime().ToString("o")
+            SameNameNfoPath    = $nfoPath
             SameNameNfoExists = [bool]$nfoExists
-            NfoSummary        = $nfoSummary
-            NfoReadError      = $nfoError
+            NfoSummary         = $nfoSummary
+            NfoReadError       = $nfoError
         }
     }
 
