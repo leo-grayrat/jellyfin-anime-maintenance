@@ -6,6 +6,7 @@ $scriptPaths = @(
     (Join-Path $PSScriptRoot "..\scripts\build_jellyfin_canonical_view.ps1"),
     (Join-Path $PSScriptRoot "..\scripts\lib\tv_audit_common.ps1"),
     (Join-Path $PSScriptRoot "..\scripts\lib\full_canonical_view_common.ps1"),
+    (Join-Path $PSScriptRoot "..\scripts\lib\full_canonical_view_apply.ps1"),
     (Join-Path $PSScriptRoot "..\scripts\build_jellyfin_full_canonical_view.ps1"),
     (Join-Path $PSScriptRoot "..\scripts\export_jellyfin_tv_audit_12.ps1"),
     (Join-Path $PSScriptRoot "..\scripts\analyze_jellyfin_tv_audit.ps1"),
