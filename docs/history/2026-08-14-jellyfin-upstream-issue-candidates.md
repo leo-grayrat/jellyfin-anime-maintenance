@@ -36,28 +36,50 @@
 
 ---
 
-## 候选 2：自动扫描中新季 Episode 的 TMDB metadata lookup 可能静默缺失
+## 候选 2：首次自动识别中新季 Episode 的 TMDB metadata 可能未被正确采用
 
 ### 现象
 
-在全新的 no-NFO 独立测试库中：
+在全新的 no-NFO 独立测试库第一次自然扫描后：
 
 - Series 已通过 `[tmdbid-...]` 正确固定身份；
 - S/E 文件命名正确；
 - Jellyfin 能创建正确 Season；
-- 但 Frieren S2 / Oshi no Ko S3 的 Episode Name 仍保持文件名；
+- Frieren S2 / Oshi no Ko S3 的 Episode Name 仍保持文件名；
 - 一部分 Episode 只获得英文 Overview / IMDb ID / 评分；另一部分连 Overview 也没有。
 
-删除 sparse NFO 后行为完全不变；把媒体库语言明确设为 `Chinese (Simplified)` + `People's Republic of China` 后也完全不变。
+删除 sparse NFO 后，第一次自然扫描的行为仍与 v3 一样，所以 NFO 不是必要条件。
 
-真实 INFO 日志只看到：
+### 22:29 Debug 日志带来的重要修正
+
+用户后来把 pilot 库语言改为：
 
 ```text
-Creating Season "第 3 季" entry for "【我推的孩子】"
-Creating Season "第 2 季" entry for "葬送的芙莉莲"
+Chinese (Simplified)
+People's Republic of China
 ```
 
-未出现 TMDB/OMDb error，但 INFO 日志本身不足以证明 provider 是否执行，因为 Jellyfin 的 provider 运行日志主要在 Debug 级别。
+然后普通扫描，界面没有变化。最初曾把它解释为“语言因素已经排除”。Debug 日志证明这个解释无效：普通扫描期间只出现 Series 级：
+
+```text
+TmdbMissingEpisodeProvider
+```
+
+没有出现：
+
+```text
+TmdbEpisodeProvider
+OmdbEpisodeProvider
+EpisodeMetadataService
+```
+
+`TmdbMissingEpisodeProvider` 是 Series 级 custom provider，用于创建/同步缺失或未播出的虚拟 Episode，并不是负责真实 Episode Name / Overview 的 `TmdbEpisodeProvider`。
+
+因此：
+
+> “改语言后普通扫描无变化”不能证明 TMDB Episode lookup 在新语言下仍失败，因为这次根本没有重新运行 Episode remote provider。
+
+Jellyfin 当前 `MetadataService` 的增量扫描规则也能解释这一点：不是首次 refresh、不是 FullRefresh、也没有 item/provider change monitor 触发时，普通扫描不会重新运行全部 remote provider。这一点目前更像预期语义，本身不是 bug。
 
 ### 当前源码能解释的部分
 
@@ -75,31 +97,49 @@ SeriesProviderIds = series.ProviderIds
 SeriesDisplayOrder = series.DisplayOrder
 ```
 
-因此，“Season 自身没有 ProviderIds 导致 Episode 完全拿不到 Series TMDB ID”这一简单解释已经可以排除。TMDB Episode provider 理论上应能拿到父 Series 的 TMDB ID。
+因此，“Season 自身没有 ProviderIds 导致 Episode 完全拿不到 Series TMDB ID”这一简单解释已经可以排除。
 
-因此当前最强怀疑是：
+### 为什么仍然可能是上游 bug
 
-> 对这些 Episode，TMDB Episode provider 没有给出可采用结果；OMDb 只对部分 Episode 提供了 fallback metadata。
+候选 2 现在只针对 **首次自然扫描时已经出现的 partial Episode metadata**，不再把后续普通扫描无变化算作证据。
 
-### 为什么可能是上游 bug
+如果后续用单 Episode `FullRefresh + replaceAllMetadata=false` 证明：
 
-如果后续证明 TMDB 对同一 `series_id + season + episode` 实际存在正常数据，而 Jellyfin 自动扫描仍没有采用，则问题可能位于：
+- TMDB 对同一 Series/S/E 有正常数据；
+- Jellyfin 的 `TmdbEpisodeProvider` 也被真实调用；
+- 但首次扫描仍没有正确采用这些 metadata；
 
-- DisplayOrder / season / episode lookup input 的具体值；
-- TMDB Episode provider 的调用条件；
-- provider 返回 null / failure 时的静默处理；
-- 新 Season 创建与 Episode metadata refresh 的时序；
-- provider result 到最终 Episode 的合并路径。
+那么问题可能位于：
 
-### 仍需完成的归因
+- 首次 Episode refresh 时的 lookup input；
+- 新 Season / Episode 建立与 remote provider refresh 的时序；
+- TMDB provider 返回结果到最终 Episode 的合并路径。
 
-下一步应直接对照：
+如果显式 FullRefresh 本身也得到 `returned no metadata`，则应继续查 TMDB 数据和 lookup 参数，不能先认定 Jellyfin bug。
 
-1. TMDB 官方 endpoint 对这些 Series/S/E 的真实返回；
-2. Jellyfin 同一次自动扫描实际构造的 Episode lookup input；
-3. Debug 日志中的 TheMovieDb / OMDb provider 执行结果。
+### 下一步归因
 
-如果 TMDB 本身就没有 Episode 数据，则这不是 Jellyfin bug，只是外部数据库数据缺失；如果 TMDB 有数据而 Jellyfin没拿到/没采用，才适合形成第二个上游 issue。
+下一步只在临时 pilot 的一个 Overview 缺失 Episode 上执行：
+
+```text
+刷新元数据 -> 搜索缺少的元数据
+```
+
+Jellyfin Web 当前对应：
+
+```text
+MetadataRefreshMode = FullRefresh
+ReplaceAllMetadata  = false
+```
+
+同时保持 Debug 日志。目标是直接看到：
+
+```text
+Running TmdbEpisodeProvider ...
+Running OmdbEpisodeProvider ...
+```
+
+以及它们是否 `returned no metadata` 或报错。
 
 ---
 
@@ -107,4 +147,5 @@ SeriesDisplayOrder = series.DisplayOrder
 
 - 两个候选都先存档，不立即上游提 issue；
 - 后续主线排障产生的新证据继续补到本文件；
+- 对已经被新证据推翻的中间结论要明确修正，不把“普通扫描没刷新 Episode metadata”误当 provider lookup 失败；
 - 最终若确认，需要分别写复现步骤、预期行为、实际行为、版本、日志和源码定位，避免把不同根因混成一个 issue。
