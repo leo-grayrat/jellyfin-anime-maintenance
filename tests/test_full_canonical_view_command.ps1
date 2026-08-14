@@ -6,11 +6,17 @@ function Assert-True {
 }
 
 $commandPath = Join-Path $PSScriptRoot "..\scripts\build_jellyfin_full_canonical_view.ps1"
-if (-not (Test-Path -LiteralPath $commandPath -PathType Leaf)) {
-    throw "Expected full canonical view command does not exist yet: $commandPath"
+$applyPath = Join-Path $PSScriptRoot "..\scripts\lib\full_canonical_view_apply.ps1"
+foreach ($path in @($commandPath, $applyPath)) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Expected full canonical view implementation file does not exist: $path"
+    }
 }
 
 $source = [System.IO.File]::ReadAllText($commandPath)
+$applySource = [System.IO.File]::ReadAllText($applyPath)
+$combined = $source + "`n" + $applySource
+
 foreach ($required in @(
     '[string]$ProductionRoot = "D:\Bangumi"',
     '[int]$ExpectedVideoCount = 676',
@@ -19,18 +25,27 @@ foreach ($required in @(
     'canonical_view_common.ps1',
     'tv_audit_common.ps1',
     'full_canonical_view_common.ps1',
+    'full_canonical_view_apply.ps1',
     '/System/Info',
     '/Library/VirtualFolders',
     'full-manifest-v2.csv',
-    'full-build-',
     'New-FcvPlan',
     'Test-FcvExistingTarget',
+    'Invoke-FcvApplyBuild'
+)) {
+    Assert-True ($source.Contains($required)) "command source contains $required"
+}
+
+foreach ($required in @(
+    'full-build-',
     'New-CvNativeHardLink',
     'Copy-CvNativeFile',
     'Move-CvNativeFileReplace',
-    'Rollback'
+    'Rollback',
+    'Get-FcvRollbackPaths',
+    'New-CvNativeDirectoryTree -Path $Root'
 )) {
-    Assert-True ($source.Contains($required)) "command source contains $required"
+    Assert-True ($applySource.Contains($required)) "apply source contains $required"
 }
 
 foreach ($forbidden in @(
@@ -47,7 +62,7 @@ foreach ($forbidden in @(
     'Move-Item -LiteralPath $row.SourcePath',
     'Remove-Item -LiteralPath $row.SourcePath'
 )) {
-    Assert-True ($source.IndexOf($forbidden, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "command excludes mutating token $forbidden"
+    Assert-True ($combined.IndexOf($forbidden, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "implementation excludes unsafe token $forbidden"
 }
 
 Assert-True ($source.IndexOf('-Method Get', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) "Jellyfin requests use GET"
@@ -56,17 +71,23 @@ Assert-True ($source.IndexOf('manifest.csv', [System.StringComparison]::OrdinalI
 Assert-True ($source.IndexOf('full-manifest-v2.csv', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) "command uses separate Phase 2 manifest"
 
 $dryRunIndex = $source.IndexOf('if (-not $Apply)', [System.StringComparison]::OrdinalIgnoreCase)
-$firstWriteIndex = $source.IndexOf('New-CvNativeDirectoryTree -Path $Root', [System.StringComparison]::OrdinalIgnoreCase)
+$applyIndex = $source.IndexOf('Invoke-FcvApplyBuild', [System.StringComparison]::OrdinalIgnoreCase)
 Assert-True ($dryRunIndex -ge 0) "command has dry-run gate"
-Assert-True ($firstWriteIndex -gt $dryRunIndex) "filesystem creation starts only after dry-run exit"
+Assert-True ($applyIndex -gt $dryRunIndex) "Apply transaction is called only after dry-run exit"
+Assert-True ($source.IndexOf('New-CvNativeDirectoryTree -Path $Root', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "command preflight layer does not create filesystem directories"
 
-$manifestTempIndex = $source.IndexOf('$ManifestTempPath', [System.StringComparison]::OrdinalIgnoreCase)
-$manifestMoveIndex = $source.IndexOf('Move-CvNativeFileReplace -Source $ManifestTempPath -Destination $FullManifestPath', [System.StringComparison]::OrdinalIgnoreCase)
-Assert-True ($manifestTempIndex -ge 0) "command stages manifest temp"
+$manifestTempIndex = $applySource.IndexOf('$ManifestTempPath', [System.StringComparison]::OrdinalIgnoreCase)
+$manifestMoveIndex = $applySource.IndexOf('Move-CvNativeFileReplace -Source $ManifestTempPath -Destination $FullManifestPath', [System.StringComparison]::OrdinalIgnoreCase)
+Assert-True ($manifestTempIndex -ge 0) "apply stages manifest temp"
 Assert-True ($manifestMoveIndex -gt $manifestTempIndex) "manifest replacement happens after temp creation"
-Assert-True ($source.IndexOf('Remove-CvNativeFile -Path $FullManifestPath', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "old manifest is never deleted before replace"
+Assert-True ($applySource.IndexOf('Remove-CvNativeFile -Path $FullManifestPath', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "old manifest is never deleted before replace"
 
-Assert-True ($source.IndexOf('Set-Cv', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "command does not contain hidden source mutation helper"
+$rollbackCheckIndex = $applySource.IndexOf('Test-FcvPathUnderOrEqual -Path $path -Root $ViewRoot', [System.StringComparison]::OrdinalIgnoreCase)
+$rollbackRemoveIndex = $applySource.IndexOf('Remove-CvNativeFile -Path $path', [System.StringComparison]::OrdinalIgnoreCase)
+Assert-True ($rollbackCheckIndex -ge 0) "rollback verifies destination stays under View"
+Assert-True ($rollbackRemoveIndex -gt $rollbackCheckIndex) "rollback validates path before file removal"
+
+Assert-True ($combined.IndexOf('Set-Cv', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "implementation does not contain hidden source mutation helper"
 Assert-True ($source.IndexOf('/Library/VirtualFolders?', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) "command does not mutate library roots"
 
-Write-Host "PASS: full canonical view command safety contract"
+Write-Host "PASS: full canonical view command and apply safety contract"
