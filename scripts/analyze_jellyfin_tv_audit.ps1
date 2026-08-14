@@ -63,7 +63,9 @@ function Test-AuditExtraLike {
 
 function Add-AuditLabel {
     param(
-        [Parameter(Mandatory = $true)][System.Collections.Generic.List[string]]$Labels,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[string]]$Labels,
         [Parameter(Mandatory = $true)][string]$Label
     )
 
