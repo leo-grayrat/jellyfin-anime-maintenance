@@ -86,13 +86,38 @@ People's Republic of China
 
 > `zh` / `zh-CN` 语言设置差异不是当前残留问题的主因。不要继续通过改语言、删 NFO 或重做 View 试探。
 
-## 5. 当前最强结论
+## 5. 22:10–22:11 真实服务器 INFO 日志
+
+用户提供了重新建立/扫描 pilot 库期间的服务器日志。可确认：
+
+```text
+[2026-08-14 22:10:56.244 +08:00] MediaBrowser.Providers.TV.SeriesMetadataService:
+Creating Season "第 3 季" entry for "【我推的孩子】"
+
+[2026-08-14 22:11:00.522 +08:00] MediaBrowser.Providers.TV.SeriesMetadataService:
+Creating Season "第 2 季" entry for "葬送的芙莉莲"
+```
+
+扫描在约 12 秒后完成，没有 TMDB / OMDb error 级别日志。
+
+这至少证明：
+
+- Jellyfin 在新的 no-NFO pilot 中确实创建了正确的 Season 2 / Season 3；
+- 问题不是“季号根本没被识别”；
+- 普通 INFO 日志没有显示 remote provider 的执行细节。
+
+不能从“INFO 日志里没有 TheMovieDb 字样”反推 TMDB provider 没有执行。Jellyfin 的 provider 运行日志主要使用 Debug 级别，因此这份日志对最终 lookup 归因仍不充分。
+
+日志中重复的 `playlists` 路径 inaccessible/empty 警告与本问题无直接关系。
+
+## 6. 当前最强结论
 
 到这里已经排除：
 
 - canonical 路径/S-E 结构；
 - sparse NFO；
-- `zh` 与明确简体中文设置差异。
+- `zh` 与明确简体中文设置差异；
+- “Jellyfin 根本没有创建正确新季”。
 
 剩余问题已经收敛到 **remote Episode metadata lookup / provider 数据本身**：
 
@@ -100,13 +125,28 @@ People's Republic of China
 - Jellyfin 构造的 EpisodeInfo（Series TMDB ID + season + episode + display order）是否和 TMDB 当前数据一致；
 - OMDb 为什么仅部分集有数据。
 
-下一步优先看真实 Jellyfin provider 日志 / 对应远程 endpoint，不再修改媒体文件布局。
+下一步优先直接对照 remote endpoint / Jellyfin lookup input；只有确实需要时再开 Debug 日志，不再修改媒体文件布局。
 
-## 6. Fate/strange Fake 特别篇
+## 7. Fate/strange Fake 特别篇
 
 FSF 的 `Whispers of Dawn` 与上述问题分开处理。它在外部数据库中是独立 TV Movie，而不是当前 TV Series 的普通 Episode。因此把它放在 Series 的 `S00E01` 下时，不应期待常规 Series Episode lookup 自动获得完整 metadata；后续更适合做明确的本地 metadata 特例。
 
-## 7. 当前边界
+## 8. 上游 issue 候选
+
+本轮已将两个可能的 Jellyfin 上游问题单独存档：
+
+```text
+docs/history/2026-08-14-jellyfin-upstream-issue-candidates.md
+```
+
+其中分别记录：
+
+1. ReplaceAll 对 partial provider metadata 的字段丢失/Name 与 Overview 不对称问题；
+2. 正确 Series 身份 + 正确 S/E + 正确 Season 已创建的情况下，自动 Episode TMDB metadata lookup 仍可能静默缺失的问题。
+
+当前都只作为候选，等待主线继续归因。
+
+## 9. 当前边界
 
 - 不修改 v3 构建器；
 - 不再以删除 sparse NFO 作为修复方向；
