@@ -34,7 +34,7 @@
 
 ### Jellyfin 规范视图
 
-第一版规范视图生成器处理当前 243 个 correction targets：
+Phase 1 生成器只处理当前 243 个已经确认的 correction targets：
 
 ```powershell
 .\scripts\build_jellyfin_canonical_view.ps1 -ApiKey "<API_KEY>"
@@ -46,13 +46,19 @@
 .\scripts\build_jellyfin_canonical_view.ps1 -ApiKey "<API_KEY>" -Apply
 ```
 
-详细说明、目录布局、manifest、回滚和当前使用边界见：
+这一版仍是 partial view，不能单独替换生产 TV 库。
 
-```text
-docs/canonical-view.md
+Phase 2 已加入完整 TV View 生成器：243 个已确认目标使用显式 `SxxEyy`，其他生产 TV 文件原样透传，并保留 sidecar：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\scripts\build_jellyfin_full_canonical_view.ps1 `
+    -ApiKey "<API_KEY>"
 ```
 
-**注意：当前 View 只包含 243 个修正目标，还不能直接替换完整 Jellyfin TV 库，也不应与原始 TV 根目录同时挂进主媒体库。**
+**目前先只运行测试和 dry-run。没有核对真实 Windows PowerShell 5.1 输出前，不要执行 Phase 2 的生产 `-Apply`，也不要切换 Jellyfin 生产媒体库根目录。**
+
+详细设计、manifest、回滚和生产切换边界见 `docs/canonical-view.md`。
 
 ### TV 动画统一审计导出
 
