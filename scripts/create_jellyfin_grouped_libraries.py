@@ -5,6 +5,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import sys
 import urllib.parse
 import urllib.request
@@ -90,6 +91,14 @@ def clone_library_options(template_options: dict, target_path: str) -> dict:
     return cloned
 
 
+def format_group_library_name(directory_name: str) -> str:
+    name = str(directory_name or "").strip()
+    match = re.fullmatch(r"(\d{4})年([1-9])月新番", name)
+    if not match:
+        return name
+    return f"{match.group(1)}年{int(match.group(2)):02d}月新番"
+
+
 def discover_targets(view_root: str) -> list[dict]:
     logical_root = inv.normalize_windows_path(view_root)
     physical_root = inv._to_extended_windows_path(logical_root) if os.name == "nt" else logical_root
@@ -101,10 +110,15 @@ def discover_targets(view_root: str) -> list[dict]:
         for entry in entries:
             if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
                 continue
-            name = entry.name.strip()
-            if not name:
+            directory_name = entry.name.strip()
+            if not directory_name:
                 continue
-            targets.append({"name": name, "path": inv.normalize_windows_path(os.path.join(logical_root, name))})
+            targets.append(
+                {
+                    "name": format_group_library_name(directory_name),
+                    "path": inv.normalize_windows_path(os.path.join(logical_root, directory_name)),
+                }
+            )
 
     targets.sort(key=lambda row: row["name"].casefold())
     if not targets:
