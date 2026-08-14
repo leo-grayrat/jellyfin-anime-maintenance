@@ -41,7 +41,7 @@ function Invoke-JfGet {
 }
 
 function Get-TargetItem {
-    $fields = [uri]::EscapeDataString("Path,ProviderIds,Overview,Settings,DateLastRefreshed,DateLastSaved,RefreshState,OriginalTitle,SortName,MediaSourceCount")
+    $fields = [uri]::EscapeDataString("Path,ProviderIds,Overview,Settings,OriginalTitle,SortName,MediaSourceCount")
     $uri = "$Server/Items?Ids=$TargetItemId&IncludeItemTypes=Episode&Recursive=true&Limit=1&Fields=$fields&EnableImages=true&ImageTypeLimit=1&EnableUserData=false"
     $response = Invoke-JfGet -Uri $uri
     $items = @($response.Items)
@@ -104,10 +104,17 @@ function Get-EpisodeTypeOptions {
     return $matches[0]
 }
 
-function Test-ChangedTimestamp {
-    param([string]$BeforeValue, [string]$AfterValue)
-    if ([string]::IsNullOrWhiteSpace($AfterValue)) { return $false }
-    return $BeforeValue -ne $AfterValue
+function Assert-TargetInvariant {
+    param(
+        [Parameter(Mandatory = $true)]$Item,
+        [Parameter(Mandatory = $true)][string]$ExpectedPath
+    )
+
+    if ([string]$Item.SeriesId -ne $TargetSeriesId) { throw "SeriesId changed during pilot." }
+    if ([int]$Item.ParentIndexNumber -ne $ExpectedSeason -or [int]$Item.IndexNumber -ne $ExpectedEpisode) {
+        throw ("S/E changed unexpectedly during metadata replacement: {0}/{1}." -f $Item.ParentIndexNumber, $Item.IndexNumber)
+    }
+    if ([string]$Item.Path -ne $ExpectedPath) { throw "Episode path changed unexpectedly during pilot." }
 }
 
 Write-Host ""
@@ -198,41 +205,30 @@ if (-not $Apply) {
 }
 
 $beforePath = [string]$before.Path
-$beforeSaved = [string]$before.DateLastSaved
-$beforeRefreshed = [string]$before.DateLastRefreshed
-
 $refreshUri = "$Server/Items/$TargetItemId/Refresh?metadataRefreshMode=FullRefresh&imageRefreshMode=None&replaceAllMetadata=true&replaceAllImages=false"
 Write-Host "Requesting one Episode FullRefresh with replaceAllMetadata=true..."
 Invoke-RestMethod -Method Post -Uri $refreshUri -Headers $Headers -ErrorAction Stop | Out-Null
 Write-Host "Refresh request accepted."
+Write-Host "Jellyfin 12 queues this request asynchronously; BaseItemDto does not expose a reliable completion timestamp/state."
+Write-Host ("Observing API-visible item state for up to {0} seconds..." -f $TimeoutSeconds)
 
-$after = $null
+$after = $before
 $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 $check = 0
+$nameChanged = $false
 while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds $PollIntervalSeconds
     $check += 1
     $current = Get-TargetItem
+    Assert-TargetInvariant -Item $current -ExpectedPath $beforePath
+    Write-Host ("Check {0}: Name=[{1}], ProviderIds={2}, Overview={3}" -f $check, [string]$current.Name, (Get-ProviderIdCount -Item $current), (-not [string]::IsNullOrWhiteSpace([string]$current.Overview)))
+    $after = $current
 
-    $savedChanged = Test-ChangedTimestamp -BeforeValue $beforeSaved -AfterValue ([string]$current.DateLastSaved)
-    $refreshedChanged = Test-ChangedTimestamp -BeforeValue $beforeRefreshed -AfterValue ([string]$current.DateLastRefreshed)
-    Write-Host ("Check {0}: state={1}, Name=[{2}], savedChanged={3}, refreshedChanged={4}" -f $check, [string]$current.RefreshState, [string]$current.Name, $savedChanged, $refreshedChanged)
-
-    if ($savedChanged -or $refreshedChanged) {
-        $after = $current
+    if ([string]$current.Name -ne [string]$before.Name -and -not [string]::IsNullOrWhiteSpace([string]$current.Name)) {
+        $nameChanged = $true
         break
     }
 }
-
-if ($null -eq $after) {
-    throw "Timed out waiting for the Episode metadata refresh to save."
-}
-
-if ([string]$after.SeriesId -ne $TargetSeriesId) { throw "SeriesId changed during pilot." }
-if ([int]$after.ParentIndexNumber -ne $ExpectedSeason -or [int]$after.IndexNumber -ne $ExpectedEpisode) {
-    throw ("S/E changed unexpectedly after metadata replacement: {0}/{1}." -f $after.ParentIndexNumber, $after.IndexNumber)
-}
-if ([string]$after.Path -ne $beforePath) { throw "Episode path changed unexpectedly during pilot." }
 
 Write-Host ""
 Write-Host "=== Result ==="
@@ -244,13 +240,15 @@ Write-Host ("Before Overview:     {0}" -f (-not [string]::IsNullOrWhiteSpace([st
 Write-Host ("After Overview:      {0}" -f (-not [string]::IsNullOrWhiteSpace([string]$after.Overview)))
 Write-Host ("After key:           S{0:D2}E{1:D2}" -f [int]$after.ParentIndexNumber, [int]$after.IndexNumber)
 
-if ([string]$after.Name -ne [string]$before.Name -and -not [string]::IsNullOrWhiteSpace([string]$after.Name)) {
+if ($nameChanged) {
     Write-Host "RESULT: NAME_REPLACED"
-    Write-Host "The old replaceAllMetadata=false refresh had preserved the existing non-empty fallback Name."
+    Write-Host "The API-visible Name changed during the observation window."
 }
 else {
-    Write-Host "RESULT: NAME_UNCHANGED"
-    Write-Host "The next discriminator is remote provider lookup / item lock behavior, not the sparse S/E NFO alone."
+    Write-Host "RESULT: NAME_UNCHANGED_AFTER_OBSERVATION"
+    Write-Host "No API-visible Name change was observed during the bounded window."
+    Write-Host "Important: refresh completion cannot be proven from BaseItemDto in Jellyfin 12."
+    Write-Host "Do not interpret this result alone as proof that replaceAllMetadata=true was ignored."
 }
 
 Write-Host "No image replacement, media-file change, NFO change, or Series refresh was requested."
