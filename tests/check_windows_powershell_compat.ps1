@@ -6,7 +6,8 @@ $scriptPaths = @(
     (Join-Path $PSScriptRoot "..\scripts\build_jellyfin_canonical_view.ps1"),
     (Join-Path $PSScriptRoot "..\scripts\lib\tv_audit_common.ps1"),
     (Join-Path $PSScriptRoot "..\scripts\export_jellyfin_tv_audit_12.ps1"),
-    (Join-Path $PSScriptRoot "..\scripts\analyze_jellyfin_tv_audit.ps1")
+    (Join-Path $PSScriptRoot "..\scripts\analyze_jellyfin_tv_audit.ps1"),
+    (Join-Path $PSScriptRoot "..\experiments\jellyfin12-nfo-refresh\17-medalist-e01-metadata-replace-pilot.ps1")
 )
 
 foreach ($scriptPath in $scriptPaths) {
@@ -22,7 +23,6 @@ foreach ($scriptPath in $scriptPaths) {
     $tokens = $null
     $errors = $null
     [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$errors) | Out-Null
-
     if ($errors.Count -gt 0) {
         $messages = ($errors | ForEach-Object { $_.Message }) -join "; "
         throw ("PowerShell parser errors in {0}: {1}" -f $scriptPath, $messages)
