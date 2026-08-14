@@ -30,6 +30,7 @@ foreach ($required in @(
     'full_canonical_view_apply.ps1',
     '/System/Info',
     '/Library/VirtualFolders',
+    'Get-TvaTvLibraries',
     'full-manifest-v2.csv',
     'New-FcvPlan',
     'Test-FcvExistingTarget',
@@ -78,7 +79,6 @@ foreach ($forbidden in @(
 }
 
 Assert-True ($source.IndexOf('-Method Get', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) "Jellyfin requests use GET"
-Assert-True ($source.IndexOf('CollectionType', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) "command filters TV libraries"
 Assert-True ($source.IndexOf('manifest.csv', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) "command reads Phase 1 manifest proof"
 Assert-True ($source.IndexOf('full-manifest-v2.csv', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) "command uses separate Phase 2 manifest"
 
