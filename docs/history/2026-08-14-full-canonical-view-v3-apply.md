@@ -1,6 +1,6 @@
 # 2026-08-14 Full Canonical View v3 Apply 与 manifest 实机记录
 
-本记录只记真实 Windows/NTFS 运行结果，以及随后对实际 `full-manifest-v3.csv` 的核验。
+本记录只记真实 Windows/NTFS/Jellyfin 12 运行结果，以及随后对实际 `full-manifest-v3.csv` 和 v3 验证库的核验。
 
 ## 1. v3 真实 Apply
 
@@ -115,20 +115,58 @@ DRY RUN finished. No files were written.
 
 这证明 v3 文件层已经在真实 Windows/NTFS 上闭环：1227 个计划目标全部可复用，没有 stale/unmanaged/collision/conflict。
 
-## 4. 当前下一步
+## 4. Jellyfin v3 独立验证
 
-停止继续修改构建器。下一步只做 Jellyfin 行为验证：新建独立 TV 验证库，只挂载：
+建立独立 TV 验证库：
 
 ```text
+验证-v3-2026年1月
 D:\Resource\BangumiLink\View-v3\2026年1月新番
 ```
 
-重点检查：
+第一次自然扫描后导出的真实 `jellyfin-v3-validation.json` 闭合为：
 
-- 186 个物理视频是否仍全部可追踪；
-- normal Episode 是否仍为 181，5 个差值是否仍全部是真实多版本；
-- 《名探偵プリキュア！》是否只剩正常 `Season 01`，且 NCOP 不再成为 S01E11；
-- 四个 `[tmdbid-...]` Series 是否得到正确网络身份；
-- 语言后缀字幕是否正常挂到对应 Episode。
+```text
+Filesystem videos in v3 validation root: 186
+Expanded Episode paths:                 185
+Normal Episodes:                        180
+```
 
-生产 Jellyfin roots 仍不切换，直到 v3 验证完成。
+这里不再应期待 181 个 normal Episode。正确解释是：
+
+- 175 个 normal Episode 各有 1 个 media source；
+- 5 个 normal Episode 各有 2 个真实版本，因此 180 个 normal Episode 对应 185 个 Episode media paths；
+- 第 186 个物理视频是《名探偵プリキュア！》的 `NCOP_ED_01`，v3 已把它放入 `extras`，因此不再属于 Episode。
+
+这说明 v3 的结构层比 v2 更完整地闭合：光美原先 27 个额外 Season-like 容器消失，NCOP 也不再冒充 Episode。
+
+### 4.1 四个 Series 身份已修正
+
+v3 验证库中的 Series provider identity：
+
+- Medalist：TMDB 237529 / IMDb tt33310730 / TVDB 433953；
+- Fate/strange Fake：TMDB 229858 / IMDb tt32864316 / TVDB 436779；
+- 【推しの子】：TMDB 203737 / IMDb tt21030032 / TVDB 421069；
+- 葬送のフリーレン：TMDB 209867 / IMDb tt22248376 / TVDB 424536。
+
+因此 v2 的“Series 本身匹配错作品”问题已经解决。
+
+### 4.2 剩余问题已进入 Episode metadata 层
+
+当前集中残留不是 S/E 结构错误：
+
+- 葬送のフリーレン Season 2：Season ProviderIds / Overview 为空；S02E01-S02E10 的 Name 仍为 canonical 文件名。Episode 都获得 IMDb ID，但只有 E02-E05 有 Overview；
+- 【推しの子】 Season 3：Season ProviderIds / Overview 为空；S03E01-S03E11 的 Name 仍为 canonical 文件名。Episode 都获得 IMDb ID，但只有 E02-E06 有 Overview；
+- Fate/strange Fake Season 1：Season provider identity 正常，S01E01-S01E13 的标题与 Overview 正常；Season 0 ProviderIds 为空，S00E01 没有 provider id / Overview，Name 为 `S00E01 -`。
+
+这些 correction Episode 的 same-name NFO 仍只含 Season/Episode，Title/Plot/UniqueIds 为空。由于 Medalist 在同样存在 sparse NFO 的情况下可以正常取得 Episode metadata，不能把 sparse NFO 单独定性为唯一根因。
+
+Fate/strange Fake 的 `Whispers of Dawn` 在 IMDb 中本身是独立的 2023 TV Movie，而不是当前 TV Series 的普通 Episode，因此把它作为该 Series 的 S00E01 展示时，不应期待常规 series-episode provider lookup 自动找到完整 metadata。
+
+## 5. 当前结论
+
+- v3 canonical 文件布局：完成；
+- v3 Jellyfin 结构验证：通过；
+- 后续不要再为标题/简介残缺继续制造 v4 路径布局；
+- Episode Name / Overview / provider lookup 的后续工作归入 Issue #5；
+- 生产 roots 仍未切换，等 metadata 策略确定后再决定切换时机。
