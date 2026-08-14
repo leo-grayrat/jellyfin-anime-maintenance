@@ -25,6 +25,8 @@ Assert-True ($text -match '/System/Logs/Log\?name=') "server log download"
 Assert-True ($text -match 'ProviderIds') "provider id inspection"
 Assert-True ($text -match 'Overview') "overview inspection"
 Assert-True ($text -match 'Medalist - 14') "target path log filter"
+Assert-True ($text -match 'foreach \(\$candidateLog in \$logs\)') "PowerShell 5.1 compatible log enumeration"
+Assert-True ($text -notmatch 'Sort-Object\s+\{\s*\[datetime\]\$_\.DateModified') "no DateModified cast sort"
 Assert-True ($text -notmatch 'Method\s+(Post|Put|Patch|Delete)') "read-only HTTP methods"
 Assert-True ($text -notmatch 'Remove-Item|Move-Item|Rename-Item|Set-Content|Out-File|Add-Content') "no local mutation commands"
 
