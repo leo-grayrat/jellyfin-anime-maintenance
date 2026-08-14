@@ -27,6 +27,13 @@ class GroupedLibraryTests(unittest.TestCase):
             },
         }
 
+    def test_format_group_library_name_pads_single_digit_months(self) -> None:
+        self.assertEqual(grouped.format_group_library_name("2025年1月新番"), "2025年01月新番")
+        self.assertEqual(grouped.format_group_library_name("2025年4月新番"), "2025年04月新番")
+        self.assertEqual(grouped.format_group_library_name("2025年7月新番"), "2025年07月新番")
+        self.assertEqual(grouped.format_group_library_name("2025年10月新番"), "2025年10月新番")
+        self.assertEqual(grouped.format_group_library_name("2017年动画"), "2017年动画")
+
     def test_clone_library_options_replaces_only_path_infos(self) -> None:
         original = copy.deepcopy(self.template["LibraryOptions"])
         target = r"D:\Resource\BangumiLink\View-v3\2026年1月新番"
@@ -38,9 +45,9 @@ class GroupedLibraryTests(unittest.TestCase):
         self.assertEqual(original["PathInfos"], [{"Path": r"D:\Resource\BangumiLink\View-v3"}])
 
     def test_build_plan_skips_same_name_same_path(self) -> None:
-        target = {"name": "2026年1月新番", "path": r"D:\View-v3\2026年1月新番"}
+        target = {"name": "2026年01月新番", "path": r"D:\View-v3\2026年1月新番"}
         existing = [{
-            "Name": "2026年1月新番",
+            "Name": "2026年01月新番",
             "CollectionType": "tvshows",
             "Locations": [r"D:\View-v3\2026年1月新番"],
         }]
@@ -48,9 +55,9 @@ class GroupedLibraryTests(unittest.TestCase):
         self.assertEqual(plan[0]["state"], "SKIP")
 
     def test_build_plan_rejects_same_name_different_path(self) -> None:
-        target = {"name": "2026年1月新番", "path": r"D:\View-v3\2026年1月新番"}
+        target = {"name": "2026年01月新番", "path": r"D:\View-v3\2026年1月新番"}
         existing = [{
-            "Name": "2026年1月新番",
+            "Name": "2026年01月新番",
             "CollectionType": "tvshows",
             "Locations": [r"D:\Old\2026年1月新番"],
         }]
@@ -58,7 +65,7 @@ class GroupedLibraryTests(unittest.TestCase):
             grouped.build_plan([target], existing)
 
     def test_build_plan_rejects_same_path_different_name(self) -> None:
-        target = {"name": "2026年1月新番", "path": r"D:\View-v3\2026年1月新番"}
+        target = {"name": "2026年01月新番", "path": r"D:\View-v3\2026年1月新番"}
         existing = [{
             "Name": "另一个名字",
             "CollectionType": "tvshows",
@@ -68,7 +75,7 @@ class GroupedLibraryTests(unittest.TestCase):
             grouped.build_plan([target], existing)
 
     def test_build_plan_allows_same_path_when_owner_is_template(self) -> None:
-        target = {"name": "2026年1月新番", "path": r"D:\View-v3\2026年1月新番"}
+        target = {"name": "2026年01月新番", "path": r"D:\View-v3\2026年1月新番"}
         existing = [{
             "Name": "raw",
             "CollectionType": "tvshows",
@@ -78,7 +85,7 @@ class GroupedLibraryTests(unittest.TestCase):
         self.assertEqual(plan[0]["state"], "CREATE")
 
     def test_build_plan_still_rejects_non_template_owner(self) -> None:
-        target = {"name": "2026年1月新番", "path": r"D:\View-v3\2026年1月新番"}
+        target = {"name": "2026年01月新番", "path": r"D:\View-v3\2026年1月新番"}
         existing = [
             {
                 "Name": "raw",
