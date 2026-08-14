@@ -34,6 +34,8 @@
 
 这样保留现有 Phase 1 已验证的身份修正规则，不重新推导 target S/E。
 
+Correction target 的 source video 及其已经归属该 target 的 sidecar 必须从普通 passthrough 计划中排除，不能同时在 View 中再生成一份原名文件。
+
 ### 2. 其他文件
 
 对 correction targets 之外的生产 TV 文件：
@@ -52,6 +54,8 @@
 
 ### correction target sidecar
 
+“同 basename sidecar”定义为：与 correction target 视频位于同一目录、文件 stem 与视频 stem 完全相同、且自身不是视频文件的普通文件。
+
 例如：
 
 ```text
@@ -67,6 +71,8 @@ S02E01 - [Group] Title - 14.mkv
 S02E01 - [Group] Title - 14.ass
 S02E01 - [Group] Title - 14.nfo
 ```
+
+如果一个 sidecar 因异常命名或 target 冲突而能够归属多个 correction targets，preflight 必须失败，不允许猜测归属。
 
 ### sidecar 处理策略
 
@@ -92,6 +98,8 @@ Phase 2 的目标是完整 View，而不是只复制“Jellyfin 当前明确使�
 Phase 2 使用新的 full-view builder，复用底层安全 helper，但不把全库逻辑硬塞进已验证脚本。
 
 现有 Phase 1 `Logs\manifest.csv` 作为 243 个已存在 canonical video/NFO 的来源证明，在 Phase 2 preflight 中读取和验证；不直接将其改造成全库 manifest。
+
+Phase 2 的 source roots 与 `D:\Resource\BangumiLink\View` 必须互不包含；如果 View 位于任何 source root 内，preflight 失败，避免递归把既有 View 当作 source 再镜像。
 
 ## Full manifest v2
 
@@ -141,11 +149,14 @@ REUSE
 5. 证明生产 TV 视频覆盖数量与当前基线一致，当前预期为 676；
 6. 证明 243 correction targets 全部存在于生产 source 视频集合；
 7. 证明 243 correction NFO 的 `<season>/<episode>` 仍与 correction target 一致；
-8. 证明 canonical path 不发生碰撞；
-9. 证明 source 与 View 在同一 volume 后才允许 hardlink；
-10. 验证现有 Phase 1 243 项的 manifest 来源关系；
-11. View 中已有但无法由 manifest 证明来源的冲突文件必须导致 preflight 失败；
-12. dry-run 不创建或修改 View / Temp / Logs 内容。
+8. 证明 correction target 及其 sidecar 不会再次进入 passthrough 计划；
+9. 证明每个 correction sidecar 最多归属一个 target；
+10. 证明 canonical path 不发生碰撞；
+11. 证明 source 与 View 在同一 volume 后才允许 hardlink；
+12. 验证现有 Phase 1 243 项的 manifest 来源关系；
+13. 证明 source roots 与 View root 互不包含；
+14. View 中已有但无法由 manifest 证明来源的冲突文件必须导致 preflight 失败；
+15. dry-run 不创建或修改 View / Temp / Logs 内容。
 
 任何一项失败时都不进入 Apply。
 
@@ -173,6 +184,7 @@ Apply 在完整 preflight 再次通过后执行。
 - 676 个生产视频全部在 View 中有唯一对应；
 - correction target 243/243 使用正确显式 S/E；
 - 所有非 target 视频仍然存在；
+- correction target 不存在额外的原名 passthrough 副本；
 - 外置字幕/NFO/重要 sidecar 未因 basename 改名而丢失；
 - 没有 unmanaged collision；
 - dry-run 二次执行全部表现为可复用；
