@@ -67,6 +67,33 @@ class GroupedLibraryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "same library path"):
             grouped.build_plan([target], existing)
 
+    def test_build_plan_allows_same_path_when_owner_is_template(self) -> None:
+        target = {"name": "2026年1月新番", "path": r"D:\View-v3\2026年1月新番"}
+        existing = [{
+            "Name": "raw",
+            "CollectionType": "tvshows",
+            "Locations": [r"D:\View-v3\2026年1月新番"],
+        }]
+        plan = grouped.build_plan([target], existing, template_name="raw")
+        self.assertEqual(plan[0]["state"], "CREATE")
+
+    def test_build_plan_still_rejects_non_template_owner(self) -> None:
+        target = {"name": "2026年1月新番", "path": r"D:\View-v3\2026年1月新番"}
+        existing = [
+            {
+                "Name": "raw",
+                "CollectionType": "tvshows",
+                "Locations": [r"D:\View-v3\2026年1月新番"],
+            },
+            {
+                "Name": "别的库",
+                "CollectionType": "tvshows",
+                "Locations": [r"D:\View-v3\2026年1月新番"],
+            },
+        ]
+        with self.assertRaisesRegex(ValueError, "same library path"):
+            grouped.build_plan([target], existing, template_name="raw")
+
     def test_apply_plan_creates_each_missing_library_and_refreshes_once(self) -> None:
         calls = []
 
