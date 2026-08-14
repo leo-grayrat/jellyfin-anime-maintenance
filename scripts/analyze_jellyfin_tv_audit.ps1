@@ -337,7 +337,7 @@ $filesystemOnlyRows = @($rows | Where-Object { $_.ItemType -eq "FilesystemVideo"
 $summaryLines = New-Object System.Collections.Generic.List[string]
 $summaryLines.Add("# Jellyfin TV audit summary")
 $summaryLines.Add("")
-$summaryLines.Add(("Source export: `{0}`" -f $inputFull))
+$summaryLines.Add(("Source export: {0}" -f $inputFull))
 $summaryLines.Add(("Generated: {0}" -f (Get-Date).ToString("o")))
 $summaryLines.Add("")
 $summaryLines.Add("## Coverage")
