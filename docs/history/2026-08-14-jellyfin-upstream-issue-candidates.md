@@ -68,6 +68,15 @@ Jellyfin 的 OMDb Episode provider 在非英文 metadata language 下：
 
 这与“文件名标题 + 英文简介 + IMDb/评分”的当前状态高度一致。
 
+此外，Jellyfin `Episode.GetLookupInfo()` 会直接从父 Series 复制：
+
+```text
+SeriesProviderIds = series.ProviderIds
+SeriesDisplayOrder = series.DisplayOrder
+```
+
+因此，“Season 自身没有 ProviderIds 导致 Episode 完全拿不到 Series TMDB ID”这一简单解释已经可以排除。TMDB Episode provider 理论上应能拿到父 Series 的 TMDB ID。
+
 因此当前最强怀疑是：
 
 > 对这些 Episode，TMDB Episode provider 没有给出可采用结果；OMDb 只对部分 Episode 提供了 fallback metadata。
@@ -76,10 +85,11 @@ Jellyfin 的 OMDb Episode provider 在非英文 metadata language 下：
 
 如果后续证明 TMDB 对同一 `series_id + season + episode` 实际存在正常数据，而 Jellyfin 自动扫描仍没有采用，则问题可能位于：
 
-- Episode lookup info 中 SeriesProviderIds / DisplayOrder / season 信息的传递；
+- DisplayOrder / season / episode lookup input 的具体值；
 - TMDB Episode provider 的调用条件；
 - provider 返回 null / failure 时的静默处理；
-- 新 Season 创建与 Episode metadata refresh 的时序。
+- 新 Season 创建与 Episode metadata refresh 的时序；
+- provider result 到最终 Episode 的合并路径。
 
 ### 仍需完成的归因
 
