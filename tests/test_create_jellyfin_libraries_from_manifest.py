@@ -242,7 +242,7 @@ class LibraryPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "conflict"):
             libcreate.ensure_no_conflicts(classified)
 
-    def test_apply_posts_missing_with_library_options_then_one_refresh(self):
+    def test_apply_posts_missing_without_starting_refresh(self):
         plans = [
             {
                 "group": "A",
@@ -270,6 +270,7 @@ class LibraryPlanTests(unittest.TestCase):
 
         result = libcreate.apply_libraries(plans, "http://x", "key", fake_post)
         self.assertEqual(result, {"created": 1, "reused": 1})
+        self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][0], "/Library/VirtualFolders")
         self.assertEqual(calls[0][1]["name"], "A")
         self.assertEqual(calls[0][1]["refreshLibrary"], "false")
@@ -277,7 +278,72 @@ class LibraryPlanTests(unittest.TestCase):
             calls[0][2],
             {"LibraryOptions": {"EnableInternetProviders": True, "TypeOptions": []}},
         )
-        self.assertEqual(calls[-1], ("/Library/Refresh", None, None))
+
+    def test_verify_saved_libraries_checks_provider_lists(self):
+        expected_options = {
+            "EnableInternetProviders": True,
+            "TypeOptions": [
+                {
+                    "Type": "Movie",
+                    "MetadataFetchers": ["TheMovieDb", "TheTVDB"],
+                    "MetadataFetcherOrder": ["TheMovieDb", "TheTVDB"],
+                    "ImageFetchers": [
+                        "TheTVDB",
+                        "The Open Movie Database",
+                        "TheMovieDb",
+                        "Embedded Image Extractor",
+                        "Screen Grabber",
+                    ],
+                    "ImageFetcherOrder": [
+                        "TheTVDB",
+                        "The Open Movie Database",
+                        "TheMovieDb",
+                        "Embedded Image Extractor",
+                        "Screen Grabber",
+                    ],
+                }
+            ],
+        }
+        plans = [
+            {
+                "name": "剧场版",
+                "collection_type": "movies",
+                "locations": [r"D:\View\剧场版"],
+                "library_options": expected_options,
+            }
+        ]
+        good = [
+            {
+                "Name": "剧场版",
+                "CollectionType": "movies",
+                "Locations": [r"D:\View\剧场版"],
+                "LibraryOptions": expected_options,
+            }
+        ]
+        libcreate.verify_saved_libraries(plans, good)
+
+        bad_options = {
+            "EnableInternetProviders": True,
+            "TypeOptions": [
+                {
+                    "Type": "Movie",
+                    "MetadataFetchers": ["TheMovieDb", "TheTVDB"],
+                    "MetadataFetcherOrder": ["TheMovieDb", "TheTVDB"],
+                    "ImageFetchers": ["TheTVDB", "TheMovieDb"],
+                    "ImageFetcherOrder": ["TheTVDB", "TheMovieDb"],
+                }
+            ],
+        }
+        bad = [
+            {
+                "Name": "剧场版",
+                "CollectionType": "movies",
+                "Locations": [r"D:\View\剧场版"],
+                "LibraryOptions": bad_options,
+            }
+        ]
+        with self.assertRaisesRegex(ValueError, "saved library verification failed"):
+            libcreate.verify_saved_libraries(plans, bad)
 
 
 if __name__ == "__main__":
