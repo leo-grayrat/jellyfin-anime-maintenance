@@ -105,7 +105,7 @@ class LibraryPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "mixes TV and movie"):
                 libcreate.plan_libraries(manifest, r"C:\x", r"D:\y")
 
-    def test_tv_provider_policy_keeps_metadata_order_but_prefers_tmdb_images(self):
+    def test_tv_provider_policy_prefers_tvdb_metadata_and_tmdb_images(self):
         available = {
             "TypeOptions": [
                 {
@@ -149,8 +149,8 @@ class LibraryPlanTests(unittest.TestCase):
 
         for type_name in ("Series", "Season", "Episode"):
             row = by_type[type_name]
-            self.assertEqual(row["MetadataFetcherOrder"][:2], ["TheMovieDb", "TheTVDB"])
-            self.assertEqual(row["MetadataFetchers"][:2], ["TheMovieDb", "TheTVDB"])
+            self.assertEqual(row["MetadataFetcherOrder"][:2], ["TheTVDB", "TheMovieDb"])
+            self.assertEqual(row["MetadataFetchers"][:2], ["TheTVDB", "TheMovieDb"])
             self.assertEqual(row["ImageFetcherOrder"][:2], ["TheMovieDb", "TheTVDB"])
             self.assertEqual(row["ImageFetchers"][:2], ["TheMovieDb", "TheTVDB"])
 
