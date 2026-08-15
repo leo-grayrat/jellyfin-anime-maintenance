@@ -56,7 +56,6 @@ def plan_libraries(
     manifest_path: str,
     c_root: str,
     d_root: str,
-    name_prefix: str = "新视图-",
 ) -> list[dict]:
     with open(manifest_path, "r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -97,7 +96,7 @@ def plan_libraries(
         plans.append(
             {
                 "group": group,
-                "name": f"{name_prefix}{group}",
+                "name": group,
                 "collection_type": collection_type_for_buckets(group, info["buckets"]),
                 "locations": locations,
                 "row_count": info["rows"],
@@ -277,14 +276,13 @@ def print_plan(plans: Sequence[dict]) -> None:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Create new Jellyfin libraries from the reviewed anime decision manifest."
+        description="Create replacement Jellyfin libraries from the reviewed anime decision manifest."
     )
     parser.add_argument("manifest", help="Reviewed private manifest CSV")
     parser.add_argument("--server", default="http://127.0.0.1:8096")
     parser.add_argument("--api-key", default=os.environ.get("JELLYFIN_API_KEY"))
     parser.add_argument("--c-root", default=r"C:\resource\video\anime")
     parser.add_argument("--d-root", default=r"D:\Resource\BangumiLink\View")
-    parser.add_argument("--name-prefix", default="新视图-")
     parser.add_argument("--apply", action="store_true")
     return parser.parse_args(argv)
 
@@ -294,7 +292,7 @@ def main(argv=None) -> int:
     if not args.api_key:
         raise SystemExit("Jellyfin API key is required: pass --api-key or set JELLYFIN_API_KEY")
 
-    plans = plan_libraries(args.manifest, args.c_root, args.d_root, args.name_prefix)
+    plans = plan_libraries(args.manifest, args.c_root, args.d_root)
     validate_location_directories(plans)
     existing = jellyfin_get(args.server, args.api_key, "/Library/VirtualFolders")
     classified = classify_existing(plans, existing)
