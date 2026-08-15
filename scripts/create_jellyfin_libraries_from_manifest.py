@@ -41,6 +41,12 @@ IMAGE_PRIORITY = (
 )
 TV_EXPLICIT_IMAGE_PROVIDERS = {TVDB, TMDB}
 MOVIE_EXPLICIT_IMAGE_PROVIDERS = {TVDB, OMDB, TMDB, EMBEDDED_IMAGE, SCREEN_GRABBER}
+PROVIDER_OPTION_FIELDS = (
+    "MetadataFetchers",
+    "MetadataFetcherOrder",
+    "ImageFetchers",
+    "ImageFetcherOrder",
+)
 
 
 def path_key(path: str) -> str:
@@ -162,6 +168,19 @@ def _find_type_option(available_options: dict, type_name: str) -> dict | None:
         if str(row.get("Type") or "").casefold() == type_name.casefold():
             return row
     return None
+
+
+def _provider_signature(library_options: dict) -> dict[str, dict[str, list[str]]]:
+    result: dict[str, dict[str, list[str]]] = {}
+    for row in library_options.get("TypeOptions") or []:
+        type_name = str(row.get("Type") or "").strip()
+        if not type_name:
+            continue
+        fields: dict[str, list[str]] = {}
+        for field in PROVIDER_OPTION_FIELDS:
+            fields[field] = [str(x) for x in (row.get(field) or [])]
+        result[type_name.casefold()] = fields
+    return result
 
 
 def validate_requested_provider_capabilities(available_options: dict, collection_type: str) -> None:
@@ -288,6 +307,67 @@ def classify_existing(plans: Sequence[dict], virtual_folders) -> list[dict]:
     return classified
 
 
+def verify_saved_libraries(plans: Sequence[dict], virtual_folders) -> None:
+    by_name: dict[str, list[dict]] = defaultdict(list)
+    for existing in flatten_virtual_folders(virtual_folders):
+        name = str(existing.get("Name") or "").strip()
+        if name:
+            by_name[name.casefold()].append(existing)
+
+    errors = []
+    for row in plans:
+        matches = by_name.get(row["name"].casefold(), [])
+        if len(matches) != 1:
+            errors.append(f"{row['name']}: expected exactly one saved library, found {len(matches)}")
+            continue
+
+        existing = matches[0]
+        actual_type = str(existing.get("CollectionType") or "").strip().casefold()
+        if actual_type != row["collection_type"].casefold():
+            errors.append(
+                f"{row['name']}: saved collection type differs: {actual_type or '<blank>'}"
+            )
+            continue
+
+        actual_locations = {path_key(x) for x in (existing.get("Locations") or [])}
+        expected_locations = {path_key(x) for x in row["locations"]}
+        if actual_locations != expected_locations:
+            errors.append(f"{row['name']}: saved locations differ")
+            continue
+
+        actual_options = existing.get("LibraryOptions") or {}
+        expected_options = row.get("library_options") or {}
+        if bool(actual_options.get("EnableInternetProviders")) != bool(
+            expected_options.get("EnableInternetProviders")
+        ):
+            errors.append(f"{row['name']}: EnableInternetProviders was not saved as requested")
+            continue
+
+        actual_signature = _provider_signature(actual_options)
+        expected_signature = _provider_signature(expected_options)
+        for type_name, expected_fields in expected_signature.items():
+            actual_fields = actual_signature.get(type_name)
+            if actual_fields is None:
+                errors.append(f"{row['name']}: saved LibraryOptions missing type {type_name}")
+                break
+            for field, expected_value in expected_fields.items():
+                if actual_fields.get(field, []) != expected_value:
+                    errors.append(
+                        f"{row['name']}: saved {type_name}.{field} differs: "
+                        f"actual={actual_fields.get(field, [])!r} expected={expected_value!r}"
+                    )
+                    break
+            else:
+                continue
+            break
+
+    if errors:
+        raise ValueError(
+            f"saved library verification failed with {len(errors)} error(s): "
+            + " | ".join(errors[:10])
+        )
+
+
 def ensure_no_conflicts(plans: Sequence[dict]) -> None:
     conflicts = [row for row in plans if row.get("state") == "CONFLICT"]
     if conflicts:
@@ -401,8 +481,6 @@ def apply_libraries(
             {"LibraryOptions": row["library_options"]},
         )
         created += 1
-    if created:
-        post(server, api_key, "/Library/Refresh", None, None)
     return {"created": created, "reused": reused}
 
 
@@ -475,10 +553,20 @@ def main(argv=None) -> int:
         return 0
 
     result = apply_libraries(classified, args.server, args.api_key)
+    saved = jellyfin_get(args.server, args.api_key, "/Library/VirtualFolders")
+    verify_saved_libraries(classified, saved)
+    print(f"Verified saved libraries: {len(classified)}")
+
+    if result["created"]:
+        jellyfin_post(args.server, args.api_key, "/Library/Refresh", None, None)
+
     print("Mode: APPLY")
     print(f"Created:           {result['created']}")
     print(f"Reused:            {result['reused']}")
-    print("One full library refresh was queued after creation.")
+    if result["created"]:
+        print("Saved library settings verified; one full library refresh was queued.")
+    else:
+        print("Saved library settings verified; no new library was created, so no refresh was queued.")
     return 0
 
 
