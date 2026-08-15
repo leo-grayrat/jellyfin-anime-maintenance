@@ -14,7 +14,7 @@
 
 用户的实际流程是：
 
-1. 先删除不再需要的旧 Jellyfin 动画库；
+1. 删除不再需要的旧 Jellyfin 动画库；
 2. 保留已经建立好的新硬链接目录；
 3. 由脚本直接按最终 `LibraryGroup` 名称一次性建立新库。
 
@@ -28,17 +28,15 @@
 
 不先创建临时名称，也不安排第二轮 Rename。
 
-脚本不会删除旧库。如果同名库仍存在但类型或 Locations 与计划不同，preflight 报 `CONFLICT` 并停止；用户先完成旧库清理后再运行即可。
-
 ## 自动化规则
 
-新增：
+脚本：
 
 ```text
 scripts/create_jellyfin_libraries_from_manifest.py
 ```
 
-脚本从私有 manifest 的 `CONFIRMED` 行生成库计划：
+从私有 manifest 的 `CONFIRMED` 行生成库计划：
 
 - 按 `LibraryGroup` 聚合；
 - `TV_MAIN / TV_EXTRA / TV_SPECIAL / U149_MULTI / ANOTHER_WORLD` → `tvshows`；
@@ -52,54 +50,44 @@ scripts/create_jellyfin_libraries_from_manifest.py
 
 默认是 dry-run。显式 `--apply` 后，只创建当前缺失的库。每个库创建时设置 `refreshLibrary=false`。
 
-正式 Apply 的顺序进一步收紧为：
+正式 Apply 的顺序：
 
 1. 创建缺失库，但不扫描；
 2. 立即重新读取 `/Library/VirtualFolders`；
 3. 核对每个库的名称、类型、Locations、`EnableInternetProviders` 与各 Type 的 `MetadataFetchers / MetadataFetcherOrder / ImageFetchers / ImageFetcherOrder`；
-4. 只有 12 个库的保存结果全部与计划一致，才触发一次 `/Library/Refresh`；
-5. 若回读不一致，脚本报错并停在“库已创建但尚未触发扫描”的状态，不自动删除库。
+4. 只有保存结果全部与计划一致，才触发一次 `/Library/Refresh`；
+5. 若回读不一致，脚本报错并停在“库已创建但尚未触发扫描”的状态。
 
-## Provider 策略
+## Provider 策略：最终纠正
 
-建库前通过 Jellyfin `/Libraries/AvailableOptions` 读取当前服务器真实可用 provider，不只依赖代码里的静态假设。
+最初用户把 TMDB / TVDB 的能力记反，助手也没有在真正写入建库策略前核实，就把错误假设固化进自动建库：图片曾被设置为 TVDB 优先，结果首次扫描得到大量英文海报。
 
-当前用户确认的图片 provider：
+用户在真实 Jellyfin 中进一步确认：
 
-- TV Series：`TheMovieDb`、`TheTVDB`；
-- Movie：`TheMovieDb`、`TheTVDB`、`The Open Movie Database`、`Embedded Image Extractor`、`Screen Grabber`。
+- **TMDB**：有需要的中文海报；
+- **TVDB**：海报缺少中文，但对 TV 动画的 Season / Episode 元数据有用。
 
-最终策略：
+同时，首次扫描时普通字段已经是中文且正常。因此最终规则不是把两个 provider 全部对调，而是只修图片顺序：
 
-- 普通 metadata：`TheMovieDb` 第一，其余已启用 provider 按 Jellyfin 返回顺序作为后备；
-- TV Series 图片：`TheTVDB` → `TheMovieDb`；
-- Movie 图片：`TheTVDB` → `The Open Movie Database` → `TheMovieDb` → `Embedded Image Extractor` → `Screen Grabber`。
+### TV library
 
-当前不顺带修改 `PreferredMetadataLanguage` / `MetadataCountryCode`。
+- Series / Season / Episode metadata：保持原顺序 `TheMovieDb → TheTVDB`；
+- TVDB 继续启用，作为 TMDB 缺少 Season / Episode 信息时的后备来源；
+- Series / Season 图片：`TheMovieDb → TheTVDB`；
+- Episode 图片：`TheMovieDb → TheTVDB → Screen Grabber`。
 
-## Chainsaw Man 总集篇的语义例外
+### Movie library
 
-`Chainsaw Man - The Compilation - 01/02` 当前继续作为 2022 TV Series 的 Season 00，映射 S00E02/E03，因此目录位于 `2022年动画`。
+- metadata：保持 `TheMovieDb → TheTVDB`；
+- 图片：`TheMovieDb → TheTVDB → The Open Movie Database → Embedded Image Extractor → Screen Grabber`。
 
-这不是实际发行年份判断。官方资料显示《チェンソーマン総集篇》实际于 2025-09-05 在 ABEMA 先行配信，2025-09-12 起在其他平台配信。用户个人收藏语义更倾向把它视作电影/剧场版一侧，但为了当前 Jellyfin/数据库的 Season 00 识别，决定不再搬动。
+也就是说：**metadata 不改，只把图片的 TMDB 提到第一。**
 
-以后遇到数据库归属与实际发行时间/收藏语义冲突，必须在映射阶段主动披露，而不能只给出数据库兼容后的结果。
+当前不顺带修改 `PreferredMetadataLanguage` / `MetadataCountryCode`，因为首次扫描的普通字段已经是正常中文；本轮只修复已确认错误的图片 provider 顺序。
 
-## 安全边界
+## 首次真实 dry-run 与 Apply
 
-脚本只管理 manifest 中计划创建的库名，不删除、重命名或修改其他 Jellyfin 库。
-
-如果计划中的库已经存在：
-
-- 名称、类型、Locations 全部一致 → `REUSABLE`；
-- 同名但类型或 Locations 不一致 → `CONFLICT`，停止；
-- 不存在 → `MISSING`，只有 `--apply` 才创建。
-
-这样即使用户没有完全删干净旧动画库，也不会被脚本静默覆盖。
-
-## 真实 Jellyfin dry-run（2026-08-15）
-
-用户在真实 Jellyfin 实例上运行 dry-run，得到：
+用户在真实 Jellyfin 实例上第一次 dry-run 得到：
 
 ```text
 Planned libraries: 12
@@ -111,7 +99,7 @@ Mode: DRY-RUN (no Jellyfin changes)
 
 12 个最终库及路径全部符合预期：11 个 `tvshows` + 1 个 `movies`；`2022年动画`、`2025年01月新番`、`2025年04月新番` 自动跨 C/D 挂双 Location，其余只挂实际存在的盘。
 
-真实 provider 输出：
+首次真实 provider 输出为：
 
 ```text
 - tvshows
@@ -130,32 +118,81 @@ Mode: DRY-RUN (no Jellyfin changes)
     images:   TheTVDB -> The Open Movie Database -> TheMovieDb -> Screen Grabber
 ```
 
-这里暴露出一个真实脚本问题：用户的 Jellyfin 明确返回 `Embedded Image Extractor` 为 Movie 可用图片 provider，但它没有进入最终 `ImageFetchers`。根因不是 provider 不存在，而是 Jellyfin 把它返回为 `DefaultEnabled=false`，旧脚本只对三个远程图片源做显式启用，因此把它过滤掉。
+这里先暴露了一个脚本问题：`Embedded Image Extractor` 虽然服务器可用，但因 `DefaultEnabled=false` 被过滤掉。之后已经修成 Movie 的五个已确认图片 provider 全部显式启用。
 
-已修正：Movie 的五个已确认图片 provider 现在全部显式启用，并保持上述目标顺序。对应回归测试也改为让 `Embedded Image Extractor` / `Screen Grabber` 在输入中 `DefaultEnabled=false`，确保这类真实服务器状态不会再次被静默过滤。
+用户随后完成了首次 `--apply`。库创建、文字字段和基本识别正常，但海报大量为英文，由此进一步确认真正的图片源优先级应该是 TMDB 第一。
 
-这次问题的有效验证来自用户真实 Jellyfin dry-run；云端单元测试只保留为代码回归保护，不作为 Jellyfin 行为已经验证的证据。
+这次问题的有效验证来自用户真实 Jellyfin；云端单元测试只作为代码回归保护，不作为 Jellyfin 实机行为已经验证的证据。
 
-## 运行方式
+## 安全重建已有 12 个库
 
-为了避免每次命令都重复 API key，可以在当前 PowerShell 会话先设置：
-
-```powershell
-$env:JELLYFIN_API_KEY = "<API_KEY>"
-```
-
-然后更新仓库并重新 dry-run：
-
-```powershell
-git pull
-python scripts\create_jellyfin_libraries_from_manifest.py `
-  inputs\raw\anime-decision-manifest-complete-revised.csv
-```
-
-只有真实输出中 Movie 图片顺序完整包含：
+为避免用户再次手工删除 12 个库，脚本新增：
 
 ```text
-TheTVDB -> The Open Movie Database -> TheMovieDb -> Embedded Image Extractor -> Screen Grabber
+--rebuild-existing
 ```
 
-且仍为 `Conflicts: 0`，才进入正式 `--apply`。
+该模式只处理 manifest 管理的最终库名，并且删除前必须满足：
+
+- 同名库恰好存在一个；
+- CollectionType 与 manifest 计划一致；
+- Locations 与 manifest 计划完全一致。
+
+只有被分类为 `REUSABLE` 的库才允许自动删除；任何同名但类型或路径不同的库都会成为 `CONFLICT` 并拒绝删除。
+
+Jellyfin 使用正式的 `DELETE /Library/VirtualFolders?name=...&refreshLibrary=false` 删除 library 配置。这里删除的是 Jellyfin virtual folder，不操作 C/D 盘的硬链接或源媒体文件。
+
+删除完成后，脚本等待这批库从 `/Library/VirtualFolders` 消失，再按相同最终库名和修正后的 provider 顺序重新创建。创建后仍然先回读验证配置，最后才触发一次扫描。
+
+推荐先 dry-run：
+
+```powershell
+python scripts\create_jellyfin_libraries_from_manifest.py `
+  inputs\raw\anime-decision-manifest-complete-revised.csv `
+  --rebuild-existing
+```
+
+此时应看到：
+
+```text
+Reusable:          12
+Conflicts:         0
+Rebuild existing:  12 matching libraries would be replaced
+Mode: DRY-RUN (no Jellyfin changes)
+```
+
+同时 provider 应为：
+
+```text
+- tvshows
+  Series:
+    metadata: TheMovieDb -> TheTVDB
+    images:   TheMovieDb -> TheTVDB
+  Season:
+    metadata: TheMovieDb -> TheTVDB
+    images:   TheMovieDb -> TheTVDB
+  Episode:
+    metadata: TheMovieDb -> TheTVDB
+    images:   TheMovieDb -> TheTVDB -> Screen Grabber
+- movies
+  Movie:
+    metadata: TheMovieDb -> TheTVDB
+    images:   TheMovieDb -> TheTVDB -> The Open Movie Database -> Embedded Image Extractor -> Screen Grabber
+```
+
+确认真实 dry-run 如上后，可一次重建：
+
+```powershell
+python scripts\create_jellyfin_libraries_from_manifest.py `
+  inputs\raw\anime-decision-manifest-complete-revised.csv `
+  --rebuild-existing `
+  --apply
+```
+
+## Chainsaw Man 总集篇的语义例外
+
+`Chainsaw Man - The Compilation - 01/02` 当前继续作为 2022 TV Series 的 Season 00，映射 S00E02/E03，因此目录位于 `2022年动画`。
+
+这不是实际发行年份判断。官方资料显示《チェンソーマン総集篇》实际于 2025-09-05 在 ABEMA 先行配信，2025-09-12 起在其他平台配信。用户个人收藏语义更倾向把它视作电影/剧场版一侧，但为了当前 Jellyfin/数据库的 Season 00 识别，决定不再搬动。
+
+以后遇到数据库归属与实际发行时间/收藏语义冲突，必须在映射阶段主动披露，而不能只给出数据库兼容后的结果。
