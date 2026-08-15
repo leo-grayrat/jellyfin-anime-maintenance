@@ -179,8 +179,8 @@ class LibraryPlanTests(unittest.TestCase):
                         {"Name": "TheMovieDb", "DefaultEnabled": True},
                         {"Name": "TheTVDB", "DefaultEnabled": False},
                         {"Name": "The Open Movie Database", "DefaultEnabled": True},
-                        {"Name": "Embedded Image Extractor", "DefaultEnabled": True},
-                        {"Name": "Screen Grabber", "DefaultEnabled": True},
+                        {"Name": "Embedded Image Extractor", "DefaultEnabled": False},
+                        {"Name": "Screen Grabber", "DefaultEnabled": False},
                     ],
                 }
             ]
@@ -198,7 +198,6 @@ class LibraryPlanTests(unittest.TestCase):
                 "Screen Grabber",
             ],
         )
-        # The three explicitly requested remote image providers are enabled when available.
         self.assertEqual(
             movie["ImageFetchers"],
             [
