@@ -6,6 +6,7 @@ import csv
 import json
 import ntpath
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -29,18 +30,24 @@ OMDB = "The Open Movie Database"
 EMBEDDED_IMAGE = "Embedded Image Extractor"
 SCREEN_GRABBER = "Screen Grabber"
 
-METADATA_PRIORITY = (TMDB,)
-IMAGE_PRIORITY = (
-    TVDB,
-    OMDB,
-    TMDB,
-    EMBEDDED_IMAGE,
-    SCREEN_GRABBER,
-    "Dynamic Image Provider",
-    "Image Extractor",
-)
-TV_EXPLICIT_IMAGE_PROVIDERS = {TVDB, TMDB}
-MOVIE_EXPLICIT_IMAGE_PROVIDERS = {TVDB, OMDB, TMDB, EMBEDDED_IMAGE, SCREEN_GRABBER}
+# TV: TVDB is the useful season/episode metadata source; TMDB is the useful
+# Chinese-poster source on this server. Movies do not need TVDB-first metadata.
+METADATA_PRIORITY = {
+    "tvshows": (TVDB, TMDB),
+    "movies": (TMDB, TVDB),
+}
+IMAGE_PRIORITY = {
+    "tvshows": (TMDB, TVDB, SCREEN_GRABBER, "Dynamic Image Provider", "Image Extractor"),
+    "movies": (TMDB, TVDB, OMDB, EMBEDDED_IMAGE, SCREEN_GRABBER, "Dynamic Image Provider", "Image Extractor"),
+}
+EXPLICIT_METADATA_PROVIDERS = {
+    "tvshows": {TVDB, TMDB},
+    "movies": {TMDB, TVDB},
+}
+EXPLICIT_IMAGE_PROVIDERS = {
+    "tvshows": {TMDB, TVDB},
+    "movies": {TMDB, TVDB, OMDB, EMBEDDED_IMAGE, SCREEN_GRABBER},
+}
 PROVIDER_OPTION_FIELDS = (
     "MetadataFetchers",
     "MetadataFetcherOrder",
@@ -77,11 +84,7 @@ def collection_type_for_buckets(group: str, buckets: set[str]) -> str:
     raise ValueError(f"{group}: no active media rows")
 
 
-def plan_libraries(
-    manifest_path: str,
-    c_root: str,
-    d_root: str,
-) -> list[dict]:
+def plan_libraries(manifest_path: str, c_root: str, d_root: str) -> list[dict]:
     with open(manifest_path, "r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         missing = sorted(REQUIRED_FIELDS - set(reader.fieldnames or []))
@@ -94,10 +97,12 @@ def plan_libraries(
         status = (row.get("Status") or "").strip().upper()
         if status != ACTIVE_STATUS:
             continue
+
         group = (row.get("LibraryGroup") or "").strip()
         bucket = (row.get("CatalogBucket") or "").strip().upper()
         relative = (row.get("TargetRelativePath") or "").strip()
         volume = (row.get("SourceVolume") or "").strip().upper()
+
         if not group:
             raise ValueError(f"row {index}: active row is missing LibraryGroup")
         if not relative:
@@ -109,6 +114,7 @@ def plan_libraries(
             )
         if volume not in {"C:", "D:"}:
             raise ValueError(f"row {index}: unsupported SourceVolume={volume!r}")
+
         groups[group]["buckets"].add(bucket)
         groups[group]["volumes"].add(volume)
         groups[group]["rows"] += 1
@@ -176,20 +182,22 @@ def _provider_signature(library_options: dict) -> dict[str, dict[str, list[str]]
         type_name = str(row.get("Type") or "").strip()
         if not type_name:
             continue
-        fields: dict[str, list[str]] = {}
-        for field in PROVIDER_OPTION_FIELDS:
-            fields[field] = [str(x) for x in (row.get(field) or [])]
-        result[type_name.casefold()] = fields
+        result[type_name.casefold()] = {
+            field: [str(x) for x in (row.get(field) or [])]
+            for field in PROVIDER_OPTION_FIELDS
+        }
     return result
 
 
 def validate_requested_provider_capabilities(available_options: dict, collection_type: str) -> None:
     if collection_type == "tvshows":
         target_type = "Series"
-        required_images = {TVDB, TMDB}
+        required_metadata = {TVDB, TMDB}
+        required_images = {TMDB, TVDB}
     elif collection_type == "movies":
         target_type = "Movie"
-        required_images = {TVDB, OMDB, TMDB, EMBEDDED_IMAGE, SCREEN_GRABBER}
+        required_metadata = {TMDB, TVDB}
+        required_images = {TMDB, TVDB, OMDB, EMBEDDED_IMAGE, SCREEN_GRABBER}
     else:
         raise ValueError(f"unsupported collection type for provider policy: {collection_type}")
 
@@ -198,8 +206,11 @@ def validate_requested_provider_capabilities(available_options: dict, collection
         raise ValueError(f"Jellyfin did not return provider options for {target_type}")
 
     metadata_names = set(_plugin_names(type_option.get("MetadataFetchers")))
-    if TMDB not in metadata_names:
-        raise ValueError(f"{target_type}: {TMDB} metadata provider is not available")
+    missing_metadata = sorted(required_metadata - metadata_names)
+    if missing_metadata:
+        raise ValueError(
+            f"{target_type}: expected metadata provider(s) are not available: {', '.join(missing_metadata)}"
+        )
 
     image_names = set(_plugin_names(type_option.get("ImageFetchers")))
     missing_images = sorted(required_images - image_names)
@@ -211,9 +222,10 @@ def validate_requested_provider_capabilities(available_options: dict, collection
 
 def build_library_options(available_options: dict, collection_type: str) -> dict:
     validate_requested_provider_capabilities(available_options, collection_type)
-    explicit_images = (
-        TV_EXPLICIT_IMAGE_PROVIDERS if collection_type == "tvshows" else MOVIE_EXPLICIT_IMAGE_PROVIDERS
-    )
+    metadata_priority = METADATA_PRIORITY[collection_type]
+    image_priority = IMAGE_PRIORITY[collection_type]
+    explicit_metadata = EXPLICIT_METADATA_PROVIDERS[collection_type]
+    explicit_images = EXPLICIT_IMAGE_PROVIDERS[collection_type]
 
     type_options = []
     for available in available_options.get("TypeOptions") or []:
@@ -223,16 +235,20 @@ def build_library_options(available_options: dict, collection_type: str) -> dict
 
         metadata_plugins = available.get("MetadataFetchers") or []
         image_plugins = available.get("ImageFetchers") or []
-        metadata_order = _ordered_plugin_names(metadata_plugins, METADATA_PRIORITY)
-        image_order = _ordered_plugin_names(image_plugins, IMAGE_PRIORITY)
+        metadata_order = _ordered_plugin_names(metadata_plugins, metadata_priority)
+        image_order = _ordered_plugin_names(image_plugins, image_priority)
 
         row = {"Type": type_name}
         if metadata_order:
             row["MetadataFetcherOrder"] = metadata_order
-            row["MetadataFetchers"] = _enabled_plugin_names(metadata_plugins, metadata_order, {TMDB})
+            row["MetadataFetchers"] = _enabled_plugin_names(
+                metadata_plugins, metadata_order, explicit_metadata
+            )
         if image_order:
             row["ImageFetcherOrder"] = image_order
-            row["ImageFetchers"] = _enabled_plugin_names(image_plugins, image_order, explicit_images)
+            row["ImageFetchers"] = _enabled_plugin_names(
+                image_plugins, image_order, explicit_images
+            )
         type_options.append(row)
 
     return {
@@ -324,9 +340,7 @@ def verify_saved_libraries(plans: Sequence[dict], virtual_folders) -> None:
         existing = matches[0]
         actual_type = str(existing.get("CollectionType") or "").strip().casefold()
         if actual_type != row["collection_type"].casefold():
-            errors.append(
-                f"{row['name']}: saved collection type differs: {actual_type or '<blank>'}"
-            )
+            errors.append(f"{row['name']}: saved collection type differs: {actual_type or '<blank>'}")
             continue
 
         actual_locations = {path_key(x) for x in (existing.get("Locations") or [])}
@@ -394,24 +408,8 @@ def auth_header(api_key: str) -> str:
     )
 
 
-def jellyfin_get(server: str, api_key: str, path: str, query: dict | None = None):
-    url = server.rstrip("/") + "/" + path.lstrip("/")
-    if query:
-        url += "?" + urllib.parse.urlencode(query, doseq=True)
-    request = urllib.request.Request(
-        url,
-        headers={"Authorization": auth_header(api_key)},
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Jellyfin GET {path} failed: HTTP {exc.code}: {body}") from exc
-
-
-def jellyfin_post(
+def _jellyfin_request(
+    method: str,
     server: str,
     api_key: str,
     path: str,
@@ -421,17 +419,49 @@ def jellyfin_post(
     url = server.rstrip("/") + "/" + path.lstrip("/")
     if query:
         url += "?" + urllib.parse.urlencode(query, doseq=True)
-    data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else b""
+
+    data = None
     headers = {"Authorization": auth_header(api_key)}
     if body is not None:
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    elif method in {"POST", "DELETE"}:
+        data = b""
+
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=60):
+        with urllib.request.urlopen(request, timeout=60) as response:
+            if method == "GET":
+                return json.load(response)
             return None
     except urllib.error.HTTPError as exc:
         response_body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Jellyfin POST {path} failed: HTTP {exc.code}: {response_body}") from exc
+        raise RuntimeError(
+            f"Jellyfin {method} {path} failed: HTTP {exc.code}: {response_body}"
+        ) from exc
+
+
+def jellyfin_get(server: str, api_key: str, path: str, query: dict | None = None):
+    return _jellyfin_request("GET", server, api_key, path, query=query)
+
+
+def jellyfin_post(
+    server: str,
+    api_key: str,
+    path: str,
+    query: dict | None = None,
+    body: dict | None = None,
+):
+    return _jellyfin_request("POST", server, api_key, path, query=query, body=body)
+
+
+def jellyfin_delete(
+    server: str,
+    api_key: str,
+    path: str,
+    query: dict | None = None,
+):
+    return _jellyfin_request("DELETE", server, api_key, path, query=query)
 
 
 def attach_library_options(plans: Sequence[dict], server: str, api_key: str) -> None:
@@ -441,15 +471,55 @@ def attach_library_options(plans: Sequence[dict], server: str, api_key: str) -> 
             server,
             api_key,
             "/Libraries/AvailableOptions",
-            {
-                "LibraryContentType": collection_type,
-                "IsNewLibrary": "true",
-            },
+            {"LibraryContentType": collection_type, "IsNewLibrary": "true"},
         )
         by_collection_type[collection_type] = build_library_options(available, collection_type)
 
     for row in plans:
         row["library_options"] = by_collection_type[row["collection_type"]]
+
+
+def delete_reusable_libraries(
+    plans: Sequence[dict],
+    server: str,
+    api_key: str,
+    delete: Callable = jellyfin_delete,
+) -> int:
+    ensure_no_conflicts(plans)
+    deleted = 0
+    for row in plans:
+        state = row.get("state")
+        if state == "MISSING":
+            continue
+        if state != "REUSABLE":
+            raise ValueError(f"refusing to delete library in state {state!r}: {row['name']}")
+        delete(
+            server,
+            api_key,
+            "/Library/VirtualFolders",
+            {"name": row["name"], "refreshLibrary": "false"},
+        )
+        deleted += 1
+    return deleted
+
+
+def wait_until_planned_libraries_are_missing(
+    plans: Sequence[dict],
+    server: str,
+    api_key: str,
+    attempts: int = 20,
+    delay_seconds: float = 0.5,
+) -> list[dict]:
+    last = []
+    for _ in range(attempts):
+        existing = jellyfin_get(server, api_key, "/Library/VirtualFolders")
+        last = classify_existing(plans, existing)
+        ensure_no_conflicts(last)
+        if all(row.get("state") == "MISSING" for row in last):
+            return last
+        time.sleep(delay_seconds)
+    states = ", ".join(f"{x['name']}={x.get('state')}" for x in last)
+    raise RuntimeError(f"deleted libraries did not disappear from Jellyfin in time: {states}")
 
 
 def apply_libraries(
@@ -468,6 +538,7 @@ def apply_libraries(
             continue
         if state != "MISSING":
             raise ValueError(f"cannot apply library in state {state!r}: {row['name']}")
+
         post(
             server,
             api_key,
@@ -516,13 +587,21 @@ def print_provider_policy(plans: Sequence[dict]) -> None:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Create replacement Jellyfin libraries from the reviewed anime decision manifest."
+        description="Create or safely rebuild Jellyfin libraries from the reviewed anime decision manifest."
     )
     parser.add_argument("manifest", help="Reviewed private manifest CSV")
     parser.add_argument("--server", default="http://127.0.0.1:8096")
     parser.add_argument("--api-key", default=os.environ.get("JELLYFIN_API_KEY"))
     parser.add_argument("--c-root", default=r"C:\resource\video\anime")
     parser.add_argument("--d-root", default=r"D:\Resource\BangumiLink\View")
+    parser.add_argument(
+        "--rebuild-existing",
+        action="store_true",
+        help=(
+            "Delete only same-name libraries whose type and Locations exactly match the manifest plan, "
+            "then recreate them with the current provider policy."
+        ),
+    )
     parser.add_argument("--apply", action="store_true")
     return parser.parse_args(argv)
 
@@ -535,6 +614,7 @@ def main(argv=None) -> int:
     plans = plan_libraries(args.manifest, args.c_root, args.d_root)
     validate_location_directories(plans)
     attach_library_options(plans, args.server, args.api_key)
+
     existing = jellyfin_get(args.server, args.api_key, "/Library/VirtualFolders")
     classified = classify_existing(plans, existing)
     print_plan(classified)
@@ -548,19 +628,31 @@ def main(argv=None) -> int:
     print(f"Conflicts:         {counts.get('CONFLICT', 0)}")
     ensure_no_conflicts(classified)
 
+    if args.rebuild_existing:
+        print(f"Rebuild existing:  {counts.get('REUSABLE', 0)} matching libraries would be replaced")
+
     if not args.apply:
         print("Mode: DRY-RUN (no Jellyfin changes)")
         return 0
 
+    deleted = 0
+    if args.rebuild_existing:
+        deleted = delete_reusable_libraries(classified, args.server, args.api_key)
+        if deleted:
+            classified = wait_until_planned_libraries_are_missing(plans, args.server, args.api_key)
+            print(f"Deleted matching libraries: {deleted}")
+
     result = apply_libraries(classified, args.server, args.api_key)
+
     saved = jellyfin_get(args.server, args.api_key, "/Library/VirtualFolders")
-    verify_saved_libraries(classified, saved)
-    print(f"Verified saved libraries: {len(classified)}")
+    verify_saved_libraries(plans, saved)
+    print(f"Verified saved libraries: {len(plans)}")
 
     if result["created"]:
         jellyfin_post(args.server, args.api_key, "/Library/Refresh", None, None)
 
     print("Mode: APPLY")
+    print(f"Deleted:           {deleted}")
     print(f"Created:           {result['created']}")
     print(f"Reused:            {result['reused']}")
     if result["created"]:
