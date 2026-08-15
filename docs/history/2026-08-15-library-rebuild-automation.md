@@ -50,7 +50,15 @@ scripts/create_jellyfin_libraries_from_manifest.py
 - `TargetRelativePath` 第一层必须与 `LibraryGroup` 一致，否则拒绝运行；
 - 同一组如果混入 TV 与 Movie bucket，拒绝运行。
 
-默认是 dry-run。显式 `--apply` 后，只创建当前缺失的库。每个库创建时设置 `refreshLibrary=false`，全部创建完后只触发一次全库扫描。
+默认是 dry-run。显式 `--apply` 后，只创建当前缺失的库。每个库创建时设置 `refreshLibrary=false`。
+
+正式 Apply 的顺序进一步收紧为：
+
+1. 创建缺失库，但不扫描；
+2. 立即重新读取 `/Library/VirtualFolders`；
+3. 核对每个库的名称、类型、Locations、`EnableInternetProviders` 与各 Type 的 `MetadataFetchers / MetadataFetcherOrder / ImageFetchers / ImageFetcherOrder`；
+4. 只有 12 个库的保存结果全部与计划一致，才触发一次 `/Library/Refresh`；
+5. 若回读不一致，脚本报错并停在“库已创建但尚未触发扫描”的状态，不自动删除库。
 
 ## Provider 策略
 
