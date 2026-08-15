@@ -59,6 +59,43 @@ python .\scripts\build_jellyfin_full_canonical_view.py `
 
 详细设计和当前边界见 `docs/canonical-view.md`。
 
+### 720 文件人工判定视图
+
+当前主线不再从旧 Jellyfin 识别状态反推库存，而是以私有的 720 行人工判定 manifest 为事实源。
+
+先机械建立硬链接视图：
+
+```powershell
+python scripts\apply_anime_decision_manifest.py `
+  inputs\raw\anime-decision-manifest-complete-revised.csv `
+  --d-root "D:\Resource\BangumiLink\View"
+```
+
+加 `--apply` 才真正建立硬链接。当前最终目标根：
+
+```text
+C:\resource\video\anime
+D:\Resource\BangumiLink\View
+```
+
+文件层闭环后，可以在删除旧动画库后按 manifest 一次性重建最终 Jellyfin 库。脚本直接使用 `LibraryGroup` 作为最终库名，不创建临时前缀库，也不删除旧库：
+
+```powershell
+$env:JELLYFIN_API_KEY = "<API_KEY>"
+python scripts\create_jellyfin_libraries_from_manifest.py `
+  inputs\raw\anime-decision-manifest-complete-revised.csv
+```
+
+确认 dry-run 没有 `CONFLICT` 后：
+
+```powershell
+python scripts\create_jellyfin_libraries_from_manifest.py `
+  inputs\raw\anime-decision-manifest-complete-revised.csv `
+  --apply
+```
+
+同一 `LibraryGroup` 如果跨 C/D，脚本会自动把两个目录加入同一个 Jellyfin library；`剧场版` 自动使用 Movie library，其余动画分组使用 TV library。
+
 ### TV 动画统一审计导出
 
 在继续修 metadata 之前，可以把 TV 库的结构、Provider 配置、正常/隐藏 Episode、实际视频文件和同名 NFO 一次性导出：
@@ -74,6 +111,11 @@ python .\scripts\build_jellyfin_full_canonical_view.py `
 Jellyfin 12 NFO 刷新调查的脚本版本、运行结果和结论存档见 `docs/history/2026-08-11-jellyfin12-nfo-refresh.md`。
 
 关于 `YYYY-MM` 目录参与 Episode 路径解析、错误生成 `LocalAlternateVersion`、显式 `SxxEyy` 文件名规避以及 NFO 路线阶段复盘，见 `docs/history/2026-08-12-jellyfin12-path-parser-and-alternate-version.md`。
+
+关于 720 文件人工判定、Apply 和自动重建 Jellyfin 库，见：
+
+- `docs/history/2026-08-15-decision-manifest-apply.md`
+- `docs/history/2026-08-15-library-rebuild-automation.md`
 
 ## 目录
 
