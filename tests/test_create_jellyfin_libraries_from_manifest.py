@@ -126,6 +126,82 @@ class LibraryPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not start with LibraryGroup"):
                 libcreate.plan_libraries(manifest, r"C:\x", r"D:\y")
 
+    def test_provider_policy_prioritizes_tmdb_metadata_but_not_images(self):
+        available = {
+            "TypeOptions": [
+                {
+                    "Type": "Series",
+                    "MetadataFetchers": [
+                        {"Name": "The Open Movie Database", "DefaultEnabled": True},
+                        {"Name": "TheMovieDb", "DefaultEnabled": True},
+                        {"Name": "TheTVDB", "DefaultEnabled": True},
+                    ],
+                    "ImageFetchers": [
+                        {"Name": "TheMovieDb", "DefaultEnabled": True},
+                        {"Name": "FanArt", "DefaultEnabled": True},
+                        {"Name": "TheTVDB", "DefaultEnabled": True},
+                        {"Name": "Dynamic Image Provider", "DefaultEnabled": True},
+                    ],
+                },
+                {
+                    "Type": "Episode",
+                    "MetadataFetchers": [
+                        {"Name": "TheMovieDb", "DefaultEnabled": True},
+                        {"Name": "The Open Movie Database", "DefaultEnabled": True},
+                    ],
+                    "ImageFetchers": [
+                        {"Name": "TheMovieDb", "DefaultEnabled": True},
+                        {"Name": "Screen Grabber", "DefaultEnabled": True},
+                    ],
+                },
+            ]
+        }
+        options = libcreate.build_library_options(available)
+        by_type = {row["Type"]: row for row in options["TypeOptions"]}
+
+        series = by_type["Series"]
+        self.assertEqual(series["MetadataFetcherOrder"][0], "TheMovieDb")
+        self.assertEqual(series["MetadataFetchers"][0], "TheMovieDb")
+        self.assertEqual(
+            series["ImageFetcherOrder"],
+            ["FanArt", "TheTVDB", "TheMovieDb", "Dynamic Image Provider"],
+        )
+        self.assertEqual(
+            series["ImageFetchers"],
+            ["FanArt", "TheTVDB", "TheMovieDb", "Dynamic Image Provider"],
+        )
+
+        episode = by_type["Episode"]
+        self.assertEqual(
+            episode["ImageFetcherOrder"],
+            ["TheMovieDb", "Screen Grabber"],
+        )
+
+    def test_provider_policy_does_not_enable_default_disabled_plugins(self):
+        available = {
+            "TypeOptions": [
+                {
+                    "Type": "Movie",
+                    "MetadataFetchers": [
+                        {"Name": "TheMovieDb", "DefaultEnabled": False},
+                        {"Name": "Other Metadata", "DefaultEnabled": True},
+                    ],
+                    "ImageFetchers": [
+                        {"Name": "TheTVDB", "DefaultEnabled": False},
+                        {"Name": "TheMovieDb", "DefaultEnabled": True},
+                        {"Name": "Screen Grabber", "DefaultEnabled": True},
+                    ],
+                }
+            ]
+        }
+        options = libcreate.build_library_options(available)
+        movie = options["TypeOptions"][0]
+        # TMDb is explicitly enabled for metadata by policy even if Jellyfin marks it off.
+        self.assertEqual(movie["MetadataFetchers"][0], "TheMovieDb")
+        # Other default-disabled image plugins are not silently enabled.
+        self.assertNotIn("TheTVDB", movie["ImageFetchers"])
+        self.assertEqual(movie["ImageFetchers"], ["TheMovieDb", "Screen Grabber"])
+
     def test_classify_existing_reusable_missing_conflict(self):
         plans = [
             {
@@ -159,13 +235,14 @@ class LibraryPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "conflict"):
             libcreate.ensure_no_conflicts(classified)
 
-    def test_apply_posts_missing_then_one_refresh(self):
+    def test_apply_posts_missing_with_library_options_then_one_refresh(self):
         plans = [
             {
                 "group": "A",
                 "name": "A",
                 "collection_type": "tvshows",
                 "locations": [r"D:\View\A"],
+                "library_options": {"EnableInternetProviders": True, "TypeOptions": []},
                 "state": "MISSING",
                 "reason": "",
             },
@@ -174,21 +251,26 @@ class LibraryPlanTests(unittest.TestCase):
                 "name": "B",
                 "collection_type": "movies",
                 "locations": [r"D:\View\B"],
+                "library_options": {"EnableInternetProviders": True, "TypeOptions": []},
                 "state": "REUSABLE",
                 "reason": "",
             },
         ]
         calls = []
 
-        def fake_post(server, api_key, path, query=None):
-            calls.append((path, query))
+        def fake_post(server, api_key, path, query=None, body=None):
+            calls.append((path, query, body))
 
         result = libcreate.apply_libraries(plans, "http://x", "key", fake_post)
         self.assertEqual(result, {"created": 1, "reused": 1})
         self.assertEqual(calls[0][0], "/Library/VirtualFolders")
         self.assertEqual(calls[0][1]["name"], "A")
         self.assertEqual(calls[0][1]["refreshLibrary"], "false")
-        self.assertEqual(calls[-1], ("/Library/Refresh", None))
+        self.assertEqual(
+            calls[0][2],
+            {"LibraryOptions": {"EnableInternetProviders": True, "TypeOptions": []}},
+        )
+        self.assertEqual(calls[-1], ("/Library/Refresh", None, None))
 
 
 if __name__ == "__main__":
