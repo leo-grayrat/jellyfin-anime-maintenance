@@ -142,11 +142,29 @@ Mode: DRY-RUN (no filesystem changes)
 
 只有这个闭环成立，才进入全新 Jellyfin library 的首次扫描。
 
-## 9. 后续路线
+## 9. Jellyfin 新库的目录层级
+
+不能直接把 `C:\resource\video\anime` 或 `D:\Resource\BangumiLink\View` 整体作为 TV library 的单一 Location。manifest 的第一层是 `LibraryGroup`，例如 `2025年04月新番`、`2026年01月新番`；如果 Jellyfin 从更上一层扫描，这些分组目录可能被当成 Series 层。
+
+正确方式是按 `LibraryGroup` 建库/配置 Location：
+
+- 每个年份/季度分组对应一个 Jellyfin library；
+- 如果同一个分组同时存在于 C/D 两盘，则把两个同名分组目录都加入同一个 Jellyfin library；
+- 例如 `2025年04月新番` 应同时使用：
+
+```text
+C:\resource\video\anime\2025年04月新番
+D:\Resource\BangumiLink\View\2025年04月新番
+```
+
+- 只存在单盘的分组只添加实际存在的那一个 Location；
+- `剧场版` 应继续按 Movie library 处理，不混入 TV library。
+
+## 10. 后续路线
 
 文件层闭环后：
 
-1. 新建 Jellyfin library，只指向新的 C/D 视图根，不复用旧库；
+1. 按上面的 `LibraryGroup` 层级创建全新的 Jellyfin libraries，不复用旧库；
 2. 让 Jellyfin 做第一次自然扫描；
 3. 再导出统一 audit；
 4. 只检查新库仍实际存在的问题：Series/Season/Episode、Special、extras、多版本、标题/简介/provider metadata；
