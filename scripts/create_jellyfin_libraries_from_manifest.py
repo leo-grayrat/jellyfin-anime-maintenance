@@ -30,11 +30,11 @@ OMDB = "The Open Movie Database"
 EMBEDDED_IMAGE = "Embedded Image Extractor"
 SCREEN_GRABBER = "Screen Grabber"
 
-# Keep the metadata order that already produced correct Chinese fields.
-# TVDB remains enabled as the fallback that supplies useful season/episode data.
-# Only image priority is reversed so TMDB can supply Chinese posters first.
+# TVDB is the primary source for TV season/episode metadata.
+# TMDB remains first for TV images so Chinese posters are preferred.
+# Movies continue to use TMDB first for both metadata and images.
 METADATA_PRIORITY = {
-    "tvshows": (TMDB, TVDB),
+    "tvshows": (TVDB, TMDB),
     "movies": (TMDB, TVDB),
 }
 IMAGE_PRIORITY = {
