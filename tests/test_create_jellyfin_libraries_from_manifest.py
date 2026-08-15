@@ -21,7 +21,7 @@ def write_manifest(path, rows):
 
 
 class LibraryPlanTests(unittest.TestCase):
-    def test_groups_tv_and_movies_and_merges_volumes(self):
+    def test_groups_tv_and_movies_and_merges_volumes_with_original_names(self):
         with tempfile.TemporaryDirectory() as td:
             manifest = os.path.join(td, "manifest.csv")
             write_manifest(
@@ -65,7 +65,6 @@ class LibraryPlanTests(unittest.TestCase):
                 manifest,
                 r"C:\resource\video\anime",
                 r"D:\Resource\BangumiLink\View",
-                "新视图-",
             )
             by_group = {row["group"]: row for row in plans}
             self.assertEqual(by_group["2025年04月新番"]["collection_type"], "tvshows")
@@ -76,8 +75,9 @@ class LibraryPlanTests(unittest.TestCase):
                     r"D:\Resource\BangumiLink\View\2025年04月新番",
                 ],
             )
+            self.assertEqual(by_group["2025年04月新番"]["name"], "2025年04月新番")
             self.assertEqual(by_group["剧场版"]["collection_type"], "movies")
-            self.assertEqual(by_group["剧场版"]["name"], "新视图-剧场版")
+            self.assertEqual(by_group["剧场版"]["name"], "剧场版")
             self.assertNotIn("2022年动画", by_group)
 
     def test_rejects_mixed_movie_tv_group(self):
@@ -105,7 +105,7 @@ class LibraryPlanTests(unittest.TestCase):
                 ],
             )
             with self.assertRaisesRegex(ValueError, "mixes TV and movie"):
-                libcreate.plan_libraries(manifest, r"C:\x", r"D:\y", "新视图-")
+                libcreate.plan_libraries(manifest, r"C:\x", r"D:\y")
 
     def test_rejects_target_group_mismatch(self):
         with tempfile.TemporaryDirectory() as td:
@@ -124,32 +124,32 @@ class LibraryPlanTests(unittest.TestCase):
                 ],
             )
             with self.assertRaisesRegex(ValueError, "does not start with LibraryGroup"):
-                libcreate.plan_libraries(manifest, r"C:\x", r"D:\y", "新视图-")
+                libcreate.plan_libraries(manifest, r"C:\x", r"D:\y")
 
     def test_classify_existing_reusable_missing_conflict(self):
         plans = [
             {
                 "group": "A",
-                "name": "新视图-A",
+                "name": "A",
                 "collection_type": "tvshows",
                 "locations": [r"D:\View\A"],
             },
             {
                 "group": "B",
-                "name": "新视图-B",
+                "name": "B",
                 "collection_type": "movies",
                 "locations": [r"D:\View\B"],
             },
             {
                 "group": "C",
-                "name": "新视图-C",
+                "name": "C",
                 "collection_type": "tvshows",
                 "locations": [r"D:\View\C"],
             },
         ]
         existing = [
-            {"Name": "新视图-A", "CollectionType": "tvshows", "Locations": [r"d:\view\A"]},
-            {"Name": "新视图-C", "CollectionType": "tvshows", "Locations": [r"D:\Other\C"]},
+            {"Name": "A", "CollectionType": "tvshows", "Locations": [r"d:\view\A"]},
+            {"Name": "C", "CollectionType": "tvshows", "Locations": [r"D:\Other\C"]},
         ]
         classified = libcreate.classify_existing(plans, existing)
         self.assertEqual(
@@ -163,7 +163,7 @@ class LibraryPlanTests(unittest.TestCase):
         plans = [
             {
                 "group": "A",
-                "name": "新视图-A",
+                "name": "A",
                 "collection_type": "tvshows",
                 "locations": [r"D:\View\A"],
                 "state": "MISSING",
@@ -171,7 +171,7 @@ class LibraryPlanTests(unittest.TestCase):
             },
             {
                 "group": "B",
-                "name": "新视图-B",
+                "name": "B",
                 "collection_type": "movies",
                 "locations": [r"D:\View\B"],
                 "state": "REUSABLE",
@@ -186,6 +186,7 @@ class LibraryPlanTests(unittest.TestCase):
         result = libcreate.apply_libraries(plans, "http://x", "key", fake_post)
         self.assertEqual(result, {"created": 1, "reused": 1})
         self.assertEqual(calls[0][0], "/Library/VirtualFolders")
+        self.assertEqual(calls[0][1]["name"], "A")
         self.assertEqual(calls[0][1]["refreshLibrary"], "false")
         self.assertEqual(calls[-1], ("/Library/Refresh", None))
 
