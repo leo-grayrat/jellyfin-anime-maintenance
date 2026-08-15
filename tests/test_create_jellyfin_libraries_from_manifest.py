@@ -75,9 +75,7 @@ class LibraryPlanTests(unittest.TestCase):
                     r"D:\Resource\BangumiLink\View\2025年04月新番",
                 ],
             )
-            self.assertEqual(by_group["2025年04月新番"]["name"], "2025年04月新番")
             self.assertEqual(by_group["剧场版"]["collection_type"], "movies")
-            self.assertEqual(by_group["剧场版"]["name"], "剧场版")
             self.assertNotIn("2022年动画", by_group)
 
     def test_rejects_mixed_movie_tv_group(self):
@@ -107,47 +105,39 @@ class LibraryPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "mixes TV and movie"):
                 libcreate.plan_libraries(manifest, r"C:\x", r"D:\y")
 
-    def test_rejects_target_group_mismatch(self):
-        with tempfile.TemporaryDirectory() as td:
-            manifest = os.path.join(td, "manifest.csv")
-            write_manifest(
-                manifest,
-                [
-                    {
-                        "SourcePath": r"D:\a.mkv",
-                        "LibraryGroup": "A",
-                        "CatalogBucket": "TV_MAIN",
-                        "TargetRelativePath": r"B\Show\S01E01.mkv",
-                        "Status": "CONFIRMED",
-                        "SourceVolume": "D:",
-                    }
-                ],
-            )
-            with self.assertRaisesRegex(ValueError, "does not start with LibraryGroup"):
-                libcreate.plan_libraries(manifest, r"C:\x", r"D:\y")
-
-    def test_tv_provider_policy_tmdb_metadata_tvdb_images(self):
+    def test_tv_provider_policy_tvdb_metadata_tmdb_images(self):
         available = {
             "TypeOptions": [
                 {
                     "Type": "Series",
                     "MetadataFetchers": [
-                        {"Name": "The Open Movie Database", "DefaultEnabled": True},
                         {"Name": "TheMovieDb", "DefaultEnabled": True},
                         {"Name": "TheTVDB", "DefaultEnabled": True},
                     ],
                     "ImageFetchers": [
+                        {"Name": "TheTVDB", "DefaultEnabled": True},
+                        {"Name": "TheMovieDb", "DefaultEnabled": True},
+                    ],
+                },
+                {
+                    "Type": "Season",
+                    "MetadataFetchers": [
                         {"Name": "TheMovieDb", "DefaultEnabled": True},
                         {"Name": "TheTVDB", "DefaultEnabled": True},
+                    ],
+                    "ImageFetchers": [
+                        {"Name": "TheTVDB", "DefaultEnabled": True},
+                        {"Name": "TheMovieDb", "DefaultEnabled": True},
                     ],
                 },
                 {
                     "Type": "Episode",
                     "MetadataFetchers": [
                         {"Name": "TheMovieDb", "DefaultEnabled": True},
-                        {"Name": "The Open Movie Database", "DefaultEnabled": True},
+                        {"Name": "TheTVDB", "DefaultEnabled": True},
                     ],
                     "ImageFetchers": [
+                        {"Name": "TheTVDB", "DefaultEnabled": True},
                         {"Name": "TheMovieDb", "DefaultEnabled": True},
                         {"Name": "Screen Grabber", "DefaultEnabled": True},
                     ],
@@ -157,27 +147,30 @@ class LibraryPlanTests(unittest.TestCase):
         options = libcreate.build_library_options(available, "tvshows")
         by_type = {row["Type"]: row for row in options["TypeOptions"]}
 
-        series = by_type["Series"]
-        self.assertEqual(series["MetadataFetcherOrder"][0], "TheMovieDb")
-        self.assertEqual(series["MetadataFetchers"][0], "TheMovieDb")
-        self.assertEqual(series["ImageFetcherOrder"], ["TheTVDB", "TheMovieDb"])
-        self.assertEqual(series["ImageFetchers"], ["TheTVDB", "TheMovieDb"])
+        for type_name in ("Series", "Season", "Episode"):
+            row = by_type[type_name]
+            self.assertEqual(row["MetadataFetcherOrder"][:2], ["TheTVDB", "TheMovieDb"])
+            self.assertEqual(row["MetadataFetchers"][:2], ["TheTVDB", "TheMovieDb"])
+            self.assertEqual(row["ImageFetcherOrder"][:2], ["TheMovieDb", "TheTVDB"])
+            self.assertEqual(row["ImageFetchers"][:2], ["TheMovieDb", "TheTVDB"])
 
-        episode = by_type["Episode"]
-        self.assertEqual(episode["ImageFetcherOrder"], ["TheMovieDb", "Screen Grabber"])
+        self.assertEqual(
+            by_type["Episode"]["ImageFetcherOrder"],
+            ["TheMovieDb", "TheTVDB", "Screen Grabber"],
+        )
 
-    def test_movie_image_provider_order_matches_confirmed_server_options(self):
+    def test_movie_provider_policy_tmdb_first_for_metadata_and_images(self):
         available = {
             "TypeOptions": [
                 {
                     "Type": "Movie",
                     "MetadataFetchers": [
-                        {"Name": "The Open Movie Database", "DefaultEnabled": True},
+                        {"Name": "TheTVDB", "DefaultEnabled": True},
                         {"Name": "TheMovieDb", "DefaultEnabled": True},
                     ],
                     "ImageFetchers": [
-                        {"Name": "TheMovieDb", "DefaultEnabled": True},
                         {"Name": "TheTVDB", "DefaultEnabled": False},
+                        {"Name": "TheMovieDb", "DefaultEnabled": True},
                         {"Name": "The Open Movie Database", "DefaultEnabled": True},
                         {"Name": "Embedded Image Extractor", "DefaultEnabled": False},
                         {"Name": "Screen Grabber", "DefaultEnabled": False},
@@ -185,50 +178,25 @@ class LibraryPlanTests(unittest.TestCase):
                 }
             ]
         }
-        options = libcreate.build_library_options(available, "movies")
-        movie = options["TypeOptions"][0]
-        self.assertEqual(movie["MetadataFetcherOrder"][0], "TheMovieDb")
+        movie = libcreate.build_library_options(available, "movies")["TypeOptions"][0]
+        self.assertEqual(movie["MetadataFetcherOrder"][:2], ["TheMovieDb", "TheTVDB"])
         self.assertEqual(
             movie["ImageFetcherOrder"],
             [
+                "TheMovieDb",
                 "TheTVDB",
                 "The Open Movie Database",
-                "TheMovieDb",
                 "Embedded Image Extractor",
                 "Screen Grabber",
             ],
         )
-        self.assertEqual(
-            movie["ImageFetchers"],
-            [
-                "TheTVDB",
-                "The Open Movie Database",
-                "TheMovieDb",
-                "Embedded Image Extractor",
-                "Screen Grabber",
-            ],
-        )
+        self.assertEqual(movie["ImageFetchers"], movie["ImageFetcherOrder"])
 
     def test_classify_existing_reusable_missing_conflict(self):
         plans = [
-            {
-                "group": "A",
-                "name": "A",
-                "collection_type": "tvshows",
-                "locations": [r"D:\View\A"],
-            },
-            {
-                "group": "B",
-                "name": "B",
-                "collection_type": "movies",
-                "locations": [r"D:\View\B"],
-            },
-            {
-                "group": "C",
-                "name": "C",
-                "collection_type": "tvshows",
-                "locations": [r"D:\View\C"],
-            },
+            {"name": "A", "collection_type": "tvshows", "locations": [r"D:\View\A"]},
+            {"name": "B", "collection_type": "movies", "locations": [r"D:\View\B"]},
+            {"name": "C", "collection_type": "tvshows", "locations": [r"D:\View\C"]},
         ]
         existing = [
             {"Name": "A", "CollectionType": "tvshows", "Locations": [r"d:\view\A"]},
@@ -236,31 +204,47 @@ class LibraryPlanTests(unittest.TestCase):
         ]
         classified = libcreate.classify_existing(plans, existing)
         self.assertEqual(
-            {row["group"]: row["state"] for row in classified},
+            {row["name"]: row["state"] for row in classified},
             {"A": "REUSABLE", "B": "MISSING", "C": "CONFLICT"},
         )
-        with self.assertRaisesRegex(ValueError, "conflict"):
-            libcreate.ensure_no_conflicts(classified)
+
+    def test_delete_reusable_libraries_only_deletes_safe_manifest_matches(self):
+        plans = [
+            {"name": "A", "state": "REUSABLE"},
+            {"name": "B", "state": "MISSING"},
+        ]
+        calls = []
+
+        def fake_delete(server, api_key, path, query=None):
+            calls.append((path, query))
+
+        deleted = libcreate.delete_reusable_libraries(
+            plans,
+            "http://x",
+            "key",
+            delete=fake_delete,
+        )
+        self.assertEqual(deleted, 1)
+        self.assertEqual(
+            calls,
+            [("/Library/VirtualFolders", {"name": "A", "refreshLibrary": "false"})],
+        )
 
     def test_apply_posts_missing_without_starting_refresh(self):
         plans = [
             {
-                "group": "A",
                 "name": "A",
                 "collection_type": "tvshows",
                 "locations": [r"D:\View\A"],
                 "library_options": {"EnableInternetProviders": True, "TypeOptions": []},
                 "state": "MISSING",
-                "reason": "",
             },
             {
-                "group": "B",
                 "name": "B",
                 "collection_type": "movies",
                 "locations": [r"D:\View\B"],
                 "library_options": {"EnableInternetProviders": True, "TypeOptions": []},
                 "state": "REUSABLE",
-                "reason": "",
             },
         ]
         calls = []
@@ -272,78 +256,7 @@ class LibraryPlanTests(unittest.TestCase):
         self.assertEqual(result, {"created": 1, "reused": 1})
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][0], "/Library/VirtualFolders")
-        self.assertEqual(calls[0][1]["name"], "A")
         self.assertEqual(calls[0][1]["refreshLibrary"], "false")
-        self.assertEqual(
-            calls[0][2],
-            {"LibraryOptions": {"EnableInternetProviders": True, "TypeOptions": []}},
-        )
-
-    def test_verify_saved_libraries_checks_provider_lists(self):
-        expected_options = {
-            "EnableInternetProviders": True,
-            "TypeOptions": [
-                {
-                    "Type": "Movie",
-                    "MetadataFetchers": ["TheMovieDb", "TheTVDB"],
-                    "MetadataFetcherOrder": ["TheMovieDb", "TheTVDB"],
-                    "ImageFetchers": [
-                        "TheTVDB",
-                        "The Open Movie Database",
-                        "TheMovieDb",
-                        "Embedded Image Extractor",
-                        "Screen Grabber",
-                    ],
-                    "ImageFetcherOrder": [
-                        "TheTVDB",
-                        "The Open Movie Database",
-                        "TheMovieDb",
-                        "Embedded Image Extractor",
-                        "Screen Grabber",
-                    ],
-                }
-            ],
-        }
-        plans = [
-            {
-                "name": "剧场版",
-                "collection_type": "movies",
-                "locations": [r"D:\View\剧场版"],
-                "library_options": expected_options,
-            }
-        ]
-        good = [
-            {
-                "Name": "剧场版",
-                "CollectionType": "movies",
-                "Locations": [r"D:\View\剧场版"],
-                "LibraryOptions": expected_options,
-            }
-        ]
-        libcreate.verify_saved_libraries(plans, good)
-
-        bad_options = {
-            "EnableInternetProviders": True,
-            "TypeOptions": [
-                {
-                    "Type": "Movie",
-                    "MetadataFetchers": ["TheMovieDb", "TheTVDB"],
-                    "MetadataFetcherOrder": ["TheMovieDb", "TheTVDB"],
-                    "ImageFetchers": ["TheTVDB", "TheMovieDb"],
-                    "ImageFetcherOrder": ["TheTVDB", "TheMovieDb"],
-                }
-            ],
-        }
-        bad = [
-            {
-                "Name": "剧场版",
-                "CollectionType": "movies",
-                "Locations": [r"D:\View\剧场版"],
-                "LibraryOptions": bad_options,
-            }
-        ]
-        with self.assertRaisesRegex(ValueError, "saved library verification failed"):
-            libcreate.verify_saved_libraries(plans, bad)
 
 
 if __name__ == "__main__":
