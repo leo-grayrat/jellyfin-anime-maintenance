@@ -126,7 +126,7 @@ class LibraryPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not start with LibraryGroup"):
                 libcreate.plan_libraries(manifest, r"C:\x", r"D:\y")
 
-    def test_provider_policy_prioritizes_tmdb_metadata_but_not_images(self):
+    def test_tv_provider_policy_tmdb_metadata_tvdb_images(self):
         available = {
             "TypeOptions": [
                 {
@@ -138,9 +138,7 @@ class LibraryPlanTests(unittest.TestCase):
                     ],
                     "ImageFetchers": [
                         {"Name": "TheMovieDb", "DefaultEnabled": True},
-                        {"Name": "FanArt", "DefaultEnabled": True},
                         {"Name": "TheTVDB", "DefaultEnabled": True},
-                        {"Name": "Dynamic Image Provider", "DefaultEnabled": True},
                     ],
                 },
                 {
@@ -156,51 +154,61 @@ class LibraryPlanTests(unittest.TestCase):
                 },
             ]
         }
-        options = libcreate.build_library_options(available)
+        options = libcreate.build_library_options(available, "tvshows")
         by_type = {row["Type"]: row for row in options["TypeOptions"]}
 
         series = by_type["Series"]
         self.assertEqual(series["MetadataFetcherOrder"][0], "TheMovieDb")
         self.assertEqual(series["MetadataFetchers"][0], "TheMovieDb")
-        self.assertEqual(
-            series["ImageFetcherOrder"],
-            ["FanArt", "TheTVDB", "TheMovieDb", "Dynamic Image Provider"],
-        )
-        self.assertEqual(
-            series["ImageFetchers"],
-            ["FanArt", "TheTVDB", "TheMovieDb", "Dynamic Image Provider"],
-        )
+        self.assertEqual(series["ImageFetcherOrder"], ["TheTVDB", "TheMovieDb"])
+        self.assertEqual(series["ImageFetchers"], ["TheTVDB", "TheMovieDb"])
 
         episode = by_type["Episode"]
-        self.assertEqual(
-            episode["ImageFetcherOrder"],
-            ["TheMovieDb", "Screen Grabber"],
-        )
+        self.assertEqual(episode["ImageFetcherOrder"], ["TheMovieDb", "Screen Grabber"])
 
-    def test_provider_policy_does_not_enable_default_disabled_plugins(self):
+    def test_movie_image_provider_order_matches_confirmed_server_options(self):
         available = {
             "TypeOptions": [
                 {
                     "Type": "Movie",
                     "MetadataFetchers": [
-                        {"Name": "TheMovieDb", "DefaultEnabled": False},
-                        {"Name": "Other Metadata", "DefaultEnabled": True},
+                        {"Name": "The Open Movie Database", "DefaultEnabled": True},
+                        {"Name": "TheMovieDb", "DefaultEnabled": True},
                     ],
                     "ImageFetchers": [
-                        {"Name": "TheTVDB", "DefaultEnabled": False},
                         {"Name": "TheMovieDb", "DefaultEnabled": True},
+                        {"Name": "TheTVDB", "DefaultEnabled": False},
+                        {"Name": "The Open Movie Database", "DefaultEnabled": True},
+                        {"Name": "Embedded Image Extractor", "DefaultEnabled": True},
                         {"Name": "Screen Grabber", "DefaultEnabled": True},
                     ],
                 }
             ]
         }
-        options = libcreate.build_library_options(available)
+        options = libcreate.build_library_options(available, "movies")
         movie = options["TypeOptions"][0]
-        # TMDb is explicitly enabled for metadata by policy even if Jellyfin marks it off.
-        self.assertEqual(movie["MetadataFetchers"][0], "TheMovieDb")
-        # Other default-disabled image plugins are not silently enabled.
-        self.assertNotIn("TheTVDB", movie["ImageFetchers"])
-        self.assertEqual(movie["ImageFetchers"], ["TheMovieDb", "Screen Grabber"])
+        self.assertEqual(movie["MetadataFetcherOrder"][0], "TheMovieDb")
+        self.assertEqual(
+            movie["ImageFetcherOrder"],
+            [
+                "TheTVDB",
+                "The Open Movie Database",
+                "TheMovieDb",
+                "Embedded Image Extractor",
+                "Screen Grabber",
+            ],
+        )
+        # The three explicitly requested remote image providers are enabled when available.
+        self.assertEqual(
+            movie["ImageFetchers"],
+            [
+                "TheTVDB",
+                "The Open Movie Database",
+                "TheMovieDb",
+                "Embedded Image Extractor",
+                "Screen Grabber",
+            ],
+        )
 
     def test_classify_existing_reusable_missing_conflict(self):
         plans = [
