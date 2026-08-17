@@ -28,6 +28,8 @@
 >
 > rere：最上面的服务器问题那更是一坨，但是和仓库内容关系不大了
 
+关于网络连接性的排查，参见 [`docs/remote-access-troubleshooting.md`](docs/remote-access-troubleshooting.md)。
+
 ## 日常维护
 
 ### 新下载动画
