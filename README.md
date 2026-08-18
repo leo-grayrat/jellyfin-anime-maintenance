@@ -49,9 +49,57 @@ python scripts\update_anime_incremental_view.py `
   --apply
 ```
 
-脚本只处理清单中**从未出现过的新文件**。已经记录过的旧文件后来即使被删除，也不会重新创建或阻塞本次更新。
+脚本只处理清单中**从未出现过的新文件**。已经记录过的旧文件后来即使被删除，也不会重新创建或阻塞本次更新。也**不处理剧场版动画**。
 
 详细说明见 `docs/incremental-hardlink.md`。
+
+### 新剧场版动画
+
+由于剧场版命名复杂且不统一且数量少，故**直接创建硬链接**自己改名称路径。
+
+```powershell
+python scripts\create_hardlink.py `
+  "D:\Gekijouban\原电影文件.mkv" `
+  "D:\Resource\BangumiLink\View\剧场版\你自己决定的目录\你自己决定的文件名.mkv"
+```
+
+确认后 `--apply` 即可。
+
+### IPv6 地址维护
+
+已确认：服务器电脑每次重新开机后都会获得新的公网 IPv6。此时使用新的当前 IPv6 直接访问 Jellyfin 可以正常工作，而 DuckDNS 暂时会指向旧地址，等待几分钟即可。
+
+#### 检查现有 IPv6
+
+```powershell
+Get-NetIPAddress -AddressFamily IPv6 |
+Where-Object { $_.IPAddress -like '2*' } |
+Format-Table InterfaceAlias,IPAddress,AddressState,PrefixLength,SuffixOrigin
+```
+
+#### 检查服务器对应 IPv6
+
+```powershell
+Resolve-DnsName <PUBLIC_HOST> -Type AAAA
+```
+
+或
+
+```powershell
+curl.exe -g -vk "https://<PUBLIC_HOST>:9443/"
+# 然后查看命令行一开始显示的 IPv6 地址
+# 也可依此判断联通状态，待返回 infant 后即大功告成
+```
+
+#### 修改服务器 IPv6 地址
+
+访问：
+
+```text
+https://www.duckdns.org/update?domains=[DOMAIN]&token=[TOKEN]&ipv6=[IPv6]&verbose=true
+```
+
+## 大型维护
 
 ### 从清单重建硬链接视图
 
