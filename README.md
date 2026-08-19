@@ -69,6 +69,8 @@ python scripts\create_hardlink.py `
 
 已确认：服务器电脑每次重新开机后都会获得新的公网 IPv6。此时使用新的当前 IPv6 直接访问 Jellyfin 可以正常工作，而 DuckDNS 暂时会指向旧地址，等待几分钟即可。
 
+> 更新：*不一定*每天/次开机都会重置！
+
 #### 检查现有 IPv6
 
 ```powershell
