@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "purpose": "解析普通集数、显式季集号、范围与版本号。",
+  "patterns": [
+    {
+      "id": "explicit_season_episode",
+      "regex": "(?i)^S(?P<season>\\d{1,2})E(?P<episode>\\d{1,3})(?:v(?P<version>\\d+))?$"
+    },
+    {
+      "id": "episode_range",
+      "regex": "(?i)^(?P<episode>\\d{1,3})\\s*[-~]\\s*(?P<episode_end>\\d{1,3})(?:v(?P<version>\\d+))?$"
+    },
+    {
+      "id": "episode_with_label",
+      "regex": "(?i)^(?P<episode>\\d{1,3})(?:v(?P<version>\\d+))?\\s+.+$"
+    },
+    {
+      "id": "raw_episode",
+      "regex": "(?i)^(?P<episode>\\d{1,3})(?:v(?P<version>\\d+))?$"
+    }
+  ]
+}

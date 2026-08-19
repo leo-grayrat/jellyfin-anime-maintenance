@@ -152,7 +152,7 @@ python scripts\create_jellyfin_libraries_from_manifest.py `
 - `scripts/`：实际维护脚本，以及早期调查阶段保留下来的工具
 - `docs/`：当前使用说明、设计说明和历史记录
 - `docs/history/`：项目调查、试验和方案演变存档
-- `rules/`：早期 NFO 规则等结构化规则文件
+- `rules/`：动画字幕组文件名解析规则；早期 NFO 规则保存在 `rules/legacy/`
 - `reports/`：历史核查结果
 - `experiments/`：一次性实验，不作为日常入口
 - `samples/`：示例文件
