@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "purpose": "解析标题字段内部明确写出的季数提示。",
+  "season_hints": [
+    {"id": "bracket_s", "regex": "(?i)\\[S(?P<season>\\d{1,2})\\]"},
+    {"id": "word_season", "regex": "(?i)(?:^|\\s)Season\\s*(?P<season>\\d{1,2})(?:$|\\s)"},
+    {"id": "suffix_s", "regex": "(?i)(?:^|\\s)S(?P<season>\\d{1,2})(?:$|\\s)"}
+  ]
+}
