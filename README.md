@@ -90,7 +90,7 @@ Resolve-DnsName <PUBLIC_HOST> -Type AAAA
 ```powershell
 curl.exe -g -vk "https://<PUBLIC_HOST>:9443/"
 # 然后查看命令行一开始显示的 IPv6 地址
-# 也可依此判断联通状态，待返回 infant 后即大功告成
+# 也可依此判断联通状态，待返回 infant（划掉）intact 后即大功告成
 ```
 
 #### 修改服务器 IPv6 地址
