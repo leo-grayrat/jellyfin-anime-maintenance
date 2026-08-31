@@ -78,3 +78,20 @@ Jellyfin 根路径返回 `302 Found`（指向 `web/`）属于成功；最后还�
 - [WireGuard 断链与 SSH 迁移](history/2026-08-31-wireguard-failure-and-ssh-relay.md)
 - [WireGuard 版搭建与验收](history/2026-08-29-azure-vps-relay.md)
 - [旧 IPv6 直连排错](history/2026-08-29-ipv6-direct-troubleshooting-archive.md)
+
+
+## Apple 客户端与协议约束
+
+Caddy 默认会启用 HTTP/3 并通过 `Alt-Svc` 宣传 QUIC。当前 Azure 入口只以 TCP 443 作为正式公网协议，因此 Caddyfile 顶部固定限制为：
+
+```caddy
+{
+    servers :443 {
+        protocols h1 h2
+    }
+}
+```
+
+这会关闭 UDP 443/HTTP3，保留兼容性良好的 HTTPS HTTP/1.1 与 HTTP/2。2026-08-31 的 iPhone Safari 与 iPad Firefox 在关闭 HTTP/3 后恢复，完整现场见 [2026-08-31 Apple HTTP3 incident](history/2026-08-31-apple-http3-and-http-url-incident.md)。
+
+对外只分发完整地址 `https://<PUBLIC_HOST>/`，不要省略协议。Apple Firefox 曾自动补全为 `http://<PUBLIC_HOST>`；由于当前服务不提供 HTTP 入口，这会直接失败，且与中继状态无关。
