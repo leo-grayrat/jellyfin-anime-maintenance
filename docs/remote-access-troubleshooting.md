@@ -73,3 +73,28 @@ sudo systemctl status caddy --no-pager
 ## WireGuard 说明
 
 现场已复现 WireGuard 可短暂连通后双向失联，Azure 只看到自身发出的握手包；同一时段普通 UDP 包仍可到达 Azure。这不足以精确归责某台设备，却足以说明该路径不适合生产回源。详见 [2026-08-31 复盘](history/2026-08-31-wireguard-failure-and-ssh-relay.md)。
+
+
+## Apple 客户端与 HTTP/3
+
+2026-08-31 曾出现 iPhone Safari 与 iPad Firefox 均提示“网络连接已中断”，而 Android 客户端可访问。Jellyfin 本机、SSH 回源和普通 HTTPS 检查当时均正常。
+
+排查确认 Caddy 默认监听 UDP 443，并在响应中发送：
+
+```text
+Alt-Svc: h3=":443"
+```
+
+即向客户端宣传 HTTP/3/QUIC；Azure 的公开入口设计只放行 TCP 443。关闭 Caddy 的 HTTP/3、仅保留 HTTP/1.1 与 HTTP/2 后，两台 Apple 设备立即恢复。当前 Caddyfile 顶部必须保留：
+
+```caddy
+{
+    servers :443 {
+        protocols h1 h2
+    }
+}
+```
+
+不要在未确认 Azure UDP 443 端到端可用前恢复 `h3`。
+
+另有独立陷阱：Apple Firefox 的地址自动补全曾给出 `http://<PUBLIC_HOST>`。当前正式入口只应使用 `https://<PUBLIC_HOST>/`；访问 HTTP 会失败，不能把它误判为 Jellyfin 或 SSH 中继故障。
