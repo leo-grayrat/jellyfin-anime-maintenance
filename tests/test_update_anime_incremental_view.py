@@ -45,6 +45,97 @@ def base_row(source, work, group, season, episode, raw, target):
 
 
 class IncrementalViewTests(unittest.TestCase):
+    def test_pre_2024_series_cannot_recreate_quarter_library(self):
+        for year in (2022, 2023):
+            with self.subTest(year=year), tempfile.TemporaryDirectory() as td:
+                root = Path(td) / 'source'
+                work = root / str(year) / 'Old Show'
+                work.mkdir(parents=True)
+                old = work / 'Old Show - 01.mkv'
+                new = work / 'Old Show - 02.mkv'
+                old.write_bytes(b'one')
+                new.write_bytes(b'two')
+                bad_group = f'{year}年07月新番'
+                old_target = os.path.join(bad_group, 'Old Show', 'Season 01', 'S01E01 - Old Show - 01.mkv')
+                rows = [base_row(str(old), 'Old Show', bad_group, 1, 1, 1, old_target)]
+
+                with self.assertRaisesRegex(ValueError, f'{year}年动画'):
+                    incremental.plan_new_rows([], rows, tracked_source_roots=[str(root)])
+
+    def test_pre_2024_annual_series_stays_annual_on_new_episode(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / 'source'
+            work = root / '2022' / 'Old Show'
+            work.mkdir(parents=True)
+            old = work / 'Old Show - 01.mkv'
+            new = work / 'Old Show - 02.mkv'
+            old.write_bytes(b'one')
+            new.write_bytes(b'two')
+            rows = [base_row(
+                str(old), 'Old Show', '2022年动画', 1, 1, 1,
+                os.path.join('2022年动画', 'Old Show', 'Season 01', 'S01E01 - Old Show - 01.mkv'),
+            )]
+
+            planned, review = incremental.plan_new_rows([], rows, tracked_source_roots=[str(root)])
+
+            self.assertEqual(review, [])
+            self.assertEqual(len(planned), 1)
+            self.assertEqual(planned[0]['LibraryGroup'], '2022年动画')
+            self.assertEqual(
+                planned[0]['TargetRelativePath'],
+                os.path.join('2022年动画', 'Old Show', 'Season 01', 'S01E02 - Old Show - 02.mkv'),
+            )
+
+    def test_2024_quarter_series_remains_allowed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / 'source'
+            work = root / '2024' / '2024-10' / 'New Show'
+            work.mkdir(parents=True)
+            old = work / 'New Show - 01.mkv'
+            new = work / 'New Show - 02.mkv'
+            old.write_bytes(b'one')
+            new.write_bytes(b'two')
+            rows = [base_row(
+                str(old), 'New Show', '2024年10月新番', 1, 1, 1,
+                os.path.join('2024年10月新番', 'New Show', 'Season 01', 'S01E01 - New Show - 01.mkv'),
+            )]
+
+            planned, review = incremental.plan_new_rows([], rows, tracked_source_roots=[str(root)])
+
+            self.assertEqual(review, [])
+            self.assertEqual(len(planned), 1)
+            self.assertEqual(planned[0]['LibraryGroup'], '2024年10月新番')
+
+    def test_tracked_source_scans_known_work_and_keeps_its_new_quarter(self):
+        with tempfile.TemporaryDirectory() as td:
+            source_root = Path(td) / 'source'
+            work = source_root / '2026' / '2026-10' / 'Sequel S2'
+            unfinished = source_root / '2022' / 'Unfinished'
+            work.mkdir(parents=True)
+            unfinished.mkdir(parents=True)
+            old = work / 'Sequel - 13.mkv'
+            new = work / 'Sequel - 14.mkv'
+            extra = unfinished / 'Unfinished - 01.mkv'
+            for path in (old, new, extra):
+                path.write_bytes(b'video')
+
+            old_target = os.path.join(
+                '2026年10月新番', 'Sequel', 'Season 02', 'S02E01 - Sequel - 13.mkv'
+            )
+            rows = [base_row(str(old), 'Sequel', '2026年10月新番', 2, 1, 13, old_target)]
+            planned, review = incremental.plan_new_rows(
+                [], rows, tracked_source_roots=[str(source_root)]
+            )
+
+            self.assertEqual(review, [])
+            self.assertEqual(len(planned), 1)
+            self.assertEqual(planned[0]['SourcePath'], str(new))
+            self.assertEqual(planned[0]['EpisodeStart'], '2')
+            self.assertEqual(
+                planned[0]['TargetRelativePath'],
+                os.path.join('2026年10月新番', 'Sequel', 'Season 02', 'S02E02 - Sequel - 14.mkv'),
+            )
+
     def test_hyakkano_absolute_number_is_inferred_from_manifest_offset(self):
         root = r'D:\Bangumi'
         work_root = root + r'\2026\2026-07\君のことが大大大大大好きな100人の彼女 第3期'

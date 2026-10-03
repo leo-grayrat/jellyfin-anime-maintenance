@@ -336,10 +336,22 @@ def load_manifest(path: str) -> tuple[list[str], list[dict]]:
     return fields, rows
 
 
-def discover_new_paths(source_roots: Sequence[str], existing_rows: Sequence[dict]) -> list[str]:
+def discover_new_paths(
+    source_roots: Sequence[str],
+    existing_rows: Sequence[dict],
+    tracked_source_roots: Sequence[str] = (),
+) -> list[str]:
     existing = {_norm(str(row.get('SourcePath') or '')) for row in existing_rows}
     found: list[str] = []
-    for root in source_roots:
+    scan_roots = list(source_roots)
+    if tracked_source_roots:
+        profiles = build_profiles(existing_rows, list(source_roots) + list(tracked_source_roots))
+        scan_roots.extend(
+            profile.work_root for profile in profiles.values()
+            if any(_is_under(profile.work_root, root) for root in tracked_source_roots)
+        )
+    seen: set[str] = set()
+    for root in scan_roots:
         if not os.path.isdir(root):
             continue
         for dirpath, _, filenames in os.walk(root):
@@ -347,18 +359,47 @@ def discover_new_paths(source_roots: Sequence[str], existing_rows: Sequence[dict
                 if os.path.splitext(filename)[1].lower() not in VIDEO_EXTS:
                     continue
                 path = os.path.join(dirpath, filename)
-                if _norm(path) not in existing:
+                key = _norm(path)
+                if key not in existing and key not in seen:
                     found.append(path)
+                    seen.add(key)
     return sorted(found, key=_norm)
 
 
-def plan_new_rows(source_roots: Sequence[str], existing_rows: Sequence[dict]) -> tuple[list[dict], list[str]]:
-    profiles = build_profiles(existing_rows, source_roots)
+def _validate_pre_2024_library_groups(rows: Sequence[dict], source_roots: Sequence[str]) -> None:
+    for row in rows:
+        if str(row.get('Status') or '').upper() != ACTIVE_STATUS or row.get('MediaClass') != 'TV_EPISODE':
+            continue
+        source = str(row.get('SourcePath') or '')
+        found = _work_root_for_path(source, source_roots)
+        if not found:
+            continue
+        _, root = found
+        first_source_part = re.split(r'[\\/]+', _relpath(source, root))[0]
+        if not re.fullmatch(r'\d{4}', first_source_part) or int(first_source_part) >= 2024:
+            continue
+        expected = f'{first_source_part}年动画'
+        group = str(row.get('LibraryGroup') or '')
+        first_target_part = re.split(r'[\\/]+', str(row.get('TargetRelativePath') or ''))[0]
+        if group != expected or first_target_part != expected:
+            raise ValueError(
+                f'pre-2024 anime must use {expected} for LibraryGroup and target: {source}'
+            )
+
+
+def plan_new_rows(
+    source_roots: Sequence[str],
+    existing_rows: Sequence[dict],
+    tracked_source_roots: Sequence[str] = (),
+) -> tuple[list[dict], list[str]]:
+    all_roots = list(source_roots) + list(tracked_source_roots)
+    _validate_pre_2024_library_groups(existing_rows, all_roots)
+    profiles = build_profiles(existing_rows, all_roots)
     planned: list[dict] = []
     review: list[str] = []
     seen_targets: set[str] = set()
 
-    for path in discover_new_paths(source_roots, existing_rows):
+    for path in discover_new_paths(source_roots, existing_rows, tracked_source_roots):
         row = classify_new_path(path, profiles, list(existing_rows) + planned)
         if row is None:
             review.append(path)
@@ -463,8 +504,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         '--source-root', action='append', dest='source_roots',
         help='Source root to scan; repeatable. Defaults to D:\\Bangumi and C:\\bangumi.'
     )
+    parser.add_argument(
+        '--tracked-source-root', action='append', dest='tracked_source_roots',
+        help='Scan only manifest-registered works under this root; repeatable. Defaults to E:\\Bangumi.'
+    )
     parser.add_argument('--c-root', default=r'C:\resource\video\anime', help='C: hardlink view root')
     parser.add_argument('--d-root', default=r'D:\Resource\BangumiLink\View', help='D: hardlink view root')
+    parser.add_argument('--e-root', default=r'E:\Resource\BangumiLink', help='E: hardlink view root')
     parser.add_argument(
         '--apply', action='store_true',
         help='Create new hardlinks and append rows to the manifest. Default is dry-run.'
@@ -475,8 +521,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     source_roots = args.source_roots or [r'D:\Bangumi', r'C:\bangumi']
+    tracked_source_roots = args.tracked_source_roots or [r'E:\Bangumi']
     fields, rows = load_manifest(args.manifest)
-    planned, review = plan_new_rows(source_roots, rows)
+    planned, review = plan_new_rows(source_roots, rows, tracked_source_roots)
 
     print(f'Existing manifest rows: {len(rows)}')
     print(f'New video files:        {len(planned) + len(review)}')
@@ -493,7 +540,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if review:
         raise SystemExit('Refusing --apply while unclassified new video files exist. Review them first.')
 
-    roots = {'c:': args.c_root, 'd:': args.d_root}
+    roots = {'c:': args.c_root, 'd:': args.d_root, 'e:': args.e_root}
     result = apply_updates(args.manifest, fields, rows, planned, roots)
     print('Mode: APPLY')
     print(f"Created hardlinks: {result['created']}")
