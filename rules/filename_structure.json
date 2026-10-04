@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "purpose": "定义动画字幕组文件名的整体板块排列；字段内部语义由 rules/fields/*.json 负责。",
+  "rules": [
+    {
+      "id": "bracket_chain",
+      "kind": "bracket_chain",
+      "shape": "[字幕组][标题][内容编号][技术信息...]",
+      "note": "适用于连续方括号命名。"
+    },
+    {
+      "id": "group_title_dash_content",
+      "kind": "dash_suffix",
+      "shape": "[字幕组] 标题 - 内容编号 [技术信息...]",
+      "note": "只在横杠右侧能被内容字段规则识别时成立。"
+    },
+    {
+      "id": "group_title_bracket_content",
+      "kind": "bracket_suffix",
+      "shape": "[字幕组] 标题 [内容编号] [技术信息...]",
+      "note": "末尾方括号先按内容字段尝试，再判断是否只是技术信息。"
+    },
+    {
+      "id": "group_title_space_content",
+      "kind": "space_suffix",
+      "shape": "[字幕组] 标题 内容编号 [技术信息...]",
+      "note": "用于 S01E05、SP01 等无需额外分隔符的尾部内容标记。"
+    },
+    {
+      "id": "title_dash_content",
+      "kind": "dash_suffix_no_group",
+      "shape": "标题 - 内容编号 [技术信息...]",
+      "note": "没有可确认字幕组时仍可解析标题与内容编号。"
+    }
+  ]
+}

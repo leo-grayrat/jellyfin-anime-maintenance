@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "purpose": "识别文件名开头的字幕组方括号。",
+  "patterns": [
+    {
+      "id": "leading_bracket_group",
+      "regex": "^\\[(?P<release_group>[^\\]]+)\\]",
+      "note": "只有该方括号不像技术信息或内容编号时才视作字幕组。"
+    }
+  ]
+}

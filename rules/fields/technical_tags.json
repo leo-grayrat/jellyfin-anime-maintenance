@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "purpose": "识别尾部技术信息，第一版主要用于把这些字段从标题/内容编号中隔离。",
+  "tags": [
+    {"name": "WEBRIP", "regex": "(?i)\\bWEB[- ]?RIP\\b|\\bWEBRIP\\b"},
+    {"name": "BDRIP", "regex": "(?i)\\bBD[- ]?RIP\\b|\\bBDRIP\\b"},
+    {"name": "BLURAY", "regex": "(?i)\\bBLU[- ]?RAY\\b|\\bBLURAY\\b"},
+    {"name": "720P", "regex": "(?i)\\b720P\\b"},
+    {"name": "1080P", "regex": "(?i)\\b1080P\\b"},
+    {"name": "2160P", "regex": "(?i)\\b2160P\\b"},
+    {"name": "AVC", "regex": "(?i)\\bAVC\\b|\\bH\\.?264\\b|\\bX264\\b"},
+    {"name": "HEVC", "regex": "(?i)\\bHEVC\\b|\\bH\\.?265\\b|\\bX265\\b"},
+    {"name": "AV1", "regex": "(?i)\\bAV1\\b"},
+    {"name": "10BIT", "regex": "(?i)\\b10[- ]?BIT\\b|\\b10BIT\\b"},
+    {"name": "8BIT", "regex": "(?i)\\b8[- ]?BIT\\b|\\b8BIT\\b"},
+    {"name": "AAC", "regex": "(?i)\\bAAC\\b"},
+    {"name": "FLAC", "regex": "(?i)\\bFLAC\\b"},
+    {"name": "OPUS", "regex": "(?i)\\bOPUS\\b"},
+    {"name": "ASS", "regex": "(?i)\\bASS(?:X\\d+)?\\b"},
+    {"name": "SRT", "regex": "(?i)\\bSRT\\b"},
+    {"name": "CHS", "regex": "(?i)\\bCHS\\b|简体|简中"},
+    {"name": "CHT", "regex": "(?i)\\bCHT\\b|繁体|繁中"},
+    {"name": "GB", "regex": "(?i)^GB$|\\bGB\\b"},
+    {"name": "MKV", "regex": "(?i)^MKV$|\\bMKV\\b"},
+    {"name": "RESOLUTION", "regex": "(?i)\\b(?:1280|1920|3840)x(?:720|1080|2160)\\b"},
+    {"name": "CHECKSUM", "regex": "(?i)^[0-9A-F]{8}$"}
+  ]
+}

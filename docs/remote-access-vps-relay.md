@@ -1,0 +1,107 @@
+# Jellyfin Azure SSH 中继：当前正式架构与运维手册
+
+> 所有地址、域名、用户名和密钥路径都必须使用占位符；不要提交真实公网 IP、域名、私钥、令牌或 `known_hosts` 内容。
+
+## 当前架构
+
+```text
+公网客户端 HTTPS :443
+  -> Azure Caddy
+  -> Azure SSH 反向监听 127.0.0.1:18096
+  -> 已认证 SSH/TCP（Windows 主动建立）
+  -> Windows Jellyfin 127.0.0.1:8096
+```
+
+`8096` 和 `18096` 均不对公网开放。Caddy 不得再回源到 `10.77.0.2:8096`。
+
+## 组件职责
+
+| 组件 | 职责 | 日常操作 |
+| --- | --- | --- |
+| Windows Jellyfin | 提供 `127.0.0.1:8096` | 确保已启动 |
+| 计划任务 `Jellyfin-SSH-Relay-v5` | 通过 `wscript.exe` 无窗口监督 SSH；退出后 5 秒重连 | 不需手工保活 |
+| Azure OpenSSH | 接受反向转发 | 不需手工操作 |
+| Azure Caddy | HTTPS 与反向代理 | 不需手工操作 |
+| DNS | 将正式域名指向 Azure IPv4 | Azure 公网 IP 变化时检查 |
+
+## 中继的安全与可靠性要求
+
+SSH 必须使用：
+
+- `-N -T`，只转发、不提供交互 shell；
+- `ExitOnForwardFailure=yes`；
+- `ServerAliveInterval=15` 与 `ServerAliveCountMax=3`；
+- `StrictHostKeyChecking=yes` 和专用 `known_hosts`；
+- `-R 127.0.0.1:18096:127.0.0.1:8096`。
+
+计划任务由 `wscript.exe` 启动隐藏的系统 `ssh.exe`。监督器必须无条件在 SSH 退出后等待 5 秒重试，不能根据 SSH 的退出码把服务误判为“已完成”。不应依赖用户不关闭空白命令窗口，也不应以手工 SSH 窗口代替长期运行的任务。
+
+Windows 开机后仍需该用户登录：当前 Jellyfin 和中继都基于该交互用户运行，不是无人登录即可恢复的系统服务。
+
+## Azure Caddy
+
+```caddy
+{
+    servers :443 {
+        protocols h1 h2
+    }
+}
+
+<PUBLIC_HOST> {
+    reverse_proxy 127.0.0.1:18096
+}
+```
+
+修改前备份 Caddyfile，修改后：
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+不得把转发绑定成 `0.0.0.0:18096`，也不得在 Azure NSG 开放 TCP 18096。SSH 服务器的 `GatewayPorts` 也应保持禁止外部绑定的设置。
+
+## 验收
+
+```powershell
+curl.exe -I http://127.0.0.1:8096/
+curl.exe -I https://<PUBLIC_HOST>/
+```
+
+```bash
+curl -I --max-time 6 http://127.0.0.1:18096/
+curl -I --max-time 8 https://<PUBLIC_HOST>/
+```
+
+Jellyfin 根路径返回 `302 Found`（指向 `web/`）属于成功；最后还要用手机移动数据访问正式域名。
+
+## 安全边界与后续加固
+
+SSH 应保持公钥认证及严格主机指纹校验；私钥不得暴露给不相关的本机账户。Caddy 是唯一对外的 HTTPS 入口，`18096` 只是 Azure 回环上的回源端口。实际配置变更后，按上方验收步骤重新确认这些约束。
+
+创建不带 sudo 的独立 Azure 中继账户和独立密钥；只允许该密钥建立指定的回环转发，并禁用交互 shell、X11 与 agent 等无关能力。同时明确禁止 root SSH 登录。
+
+排错时不要把 Caddy 改回 WireGuard 地址，不要开放 Azure TCP 18096，也不要将 `StrictHostKeyChecking` 改为自动接受陌生主机。手机打不开时先按分层排错手册定位，而不是先重配 DNS 或证书。
+
+历史资料：
+
+- [WireGuard 断链与 SSH 迁移](history/2026-08-31-wireguard-failure-and-ssh-relay.md)
+- [WireGuard 版搭建与验收](history/2026-08-29-azure-vps-relay.md)
+- [旧 IPv6 直连排错](history/2026-08-29-ipv6-direct-troubleshooting-archive.md)
+
+
+## Apple 客户端与协议约束
+
+Caddy 默认会启用 HTTP/3 并通过 `Alt-Svc` 宣传 QUIC。当前 Azure 入口只以 TCP 443 作为正式公网协议，因此 Caddyfile 顶部固定限制为：
+
+```caddy
+{
+    servers :443 {
+        protocols h1 h2
+    }
+}
+```
+
+这会关闭 UDP 443/HTTP3，保留兼容性良好的 HTTPS HTTP/1.1 与 HTTP/2。2026-08-31 的 iPhone Safari 与 iPad Firefox 在关闭 HTTP/3 后恢复，完整现场见 [2026-08-31 Apple HTTP3 incident](history/2026-08-31-apple-http3-and-http-url-incident.md)。
+
+对外只分发完整地址 `https://<PUBLIC_HOST>/`，不要省略协议。Apple Firefox 曾自动补全为 `http://<PUBLIC_HOST>`；由于当前服务不提供 HTTP 入口，这会直接失败，且与中继状态无关。

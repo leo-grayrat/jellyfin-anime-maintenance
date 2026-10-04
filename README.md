@@ -65,39 +65,22 @@ python scripts\create_hardlink.py `
 
 确认后 `--apply` 即可。
 
-### IPv6 地址维护
+### 公网入口维护
 
-已确认：服务器电脑每次重新开机后都会获得新的公网 IPv6。此时使用新的当前 IPv6 直接访问 Jellyfin 可以正常工作，而 DuckDNS 暂时会指向旧地址，等待几分钟即可。
-
-#### 检查现有 IPv6
-
-```powershell
-Get-NetIPAddress -AddressFamily IPv6 |
-Where-Object { $_.IPAddress -like '2*' } |
-Format-Table InterfaceAlias,IPAddress,AddressState,PrefixLength,SuffixOrigin
-```
-
-#### 检查服务器对应 IPv6
-
-```powershell
-Resolve-DnsName <PUBLIC_HOST> -Type AAAA
-```
-
-或
-
-```powershell
-curl.exe -g -vk "https://<PUBLIC_HOST>:9443/"
-# 然后查看命令行一开始显示的 IPv6 地址
-# 也可依此判断联通状态，待返回 infant 后即大功告成
-```
-
-#### 修改服务器 IPv6 地址
-
-访问：
+当前正式入口不再使用家庭 IPv6 / `:9443`，也不再依赖 WireGuard。链路为：
 
 ```text
-https://www.duckdns.org/update?domains=[DOMAIN]&token=[TOKEN]&ipv6=[IPv6]&verbose=true
+公网 HTTPS
+    -> Azure Caddy
+    -> Azure localhost SSH 反向转发
+    -> Windows Jellyfin :8096
 ```
+
+日常维护、启动边界和排错顺序见：
+
+- [当前架构与运维手册](docs/remote-access-vps-relay.md)；
+- [故障分层排查](docs/remote-access-troubleshooting.md)；
+- [WireGuard 断链与迁移复盘](docs/history/2026-08-31-wireguard-failure-and-ssh-relay.md)。
 
 ## 大型维护
 
@@ -150,7 +133,7 @@ python scripts\create_jellyfin_libraries_from_manifest.py `
 - `scripts/`：实际维护脚本，以及早期调查阶段保留下来的工具
 - `docs/`：当前使用说明、设计说明和历史记录
 - `docs/history/`：项目调查、试验和方案演变存档
-- `rules/`：早期 NFO 规则等结构化规则文件
+- `rules/`：动画字幕组文件名解析规则；早期 NFO 规则保存在 `rules/legacy/`
 - `reports/`：历史核查结果
 - `experiments/`：一次性实验，不作为日常入口
 - `samples/`：示例文件
