@@ -6,3 +6,12 @@ inputs/raw/
 jellyfin_tv_nfo_run_log.csv
 jellyfin_tv_nfo_refresh_log.csv
 jellyfin_tv_nfo_alternate_audit.csv
+
+# Local media inventories and Jellyfin identity audits (contain titles and paths)
+anime-video-files.txt
+jellyfin-series-*.csv
+jellyfin-seven-series-detail.csv
+
+# Python test/import caches
+__pycache__/
+*.py[cod]
