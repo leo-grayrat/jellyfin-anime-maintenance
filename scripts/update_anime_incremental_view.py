@@ -216,6 +216,7 @@ def _raw_candidates(name: str) -> list[int]:
     patterns = [
         r'\[(\d{1,3})(?:v\d+)?\]',
         r'\s-\s*(\d{1,3})(?:v\d+)?(?=\s|\[|\.|$)',
+        r'ページ(\d{1,3})(?!\d)',
     ]
     for pattern in patterns:
         for match in re.finditer(pattern, name, re.I):

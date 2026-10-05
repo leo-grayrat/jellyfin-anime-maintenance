@@ -183,6 +183,23 @@ class IncrementalViewTests(unittest.TestCase):
         conflicting_path = work_root + r'\[BeanSub][Kusuriya S3][03_50][CHS].mp4'
         self.assertIsNone(incremental.classify_new_path(conflicting_path, profiles, rows))
 
+    def test_black_clover_page_number_continues_second_season(self):
+        root = r'E:\Bangumi'
+        work_root = root + r'\2026\2026-10\ブラッククローバー 2nd Season'
+        old = work_root + r'\[NEO·QSW]ブラッククローバー 2nd Season ページ171 開戦[WEBRIP].mp4'
+        target = r'2026年10月新番\ブラッククローバー\Season 02\S02E01 - [NEO·QSW]ブラッククローバー 2nd Season ページ171 開戦[WEBRIP].mp4'
+        rows = [base_row(old, 'ブラッククローバー', '2026年10月新番', 2, 1, 171, target)]
+        profiles = incremental.build_profiles(rows, [root])
+
+        new_path = work_root + r'\[NEO·QSW]ブラッククローバー 2nd Season ページ172 次回[WEBRIP].mp4'
+        result = incremental.classify_new_path(new_path, profiles, rows)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result['Season'], '2')
+        self.assertEqual(result['EpisodeStart'], '2')
+        self.assertEqual(result['RawEpisodeLabel'], '172')
+        self.assertIn(r'S02E02 - [NEO·QSW]ブラッククローバー 2nd Season ページ172', result['TargetRelativePath'])
+
     def test_world_dancing_changed_group_nested_folder_explicit_sxxeyy(self):
         root = r'D:\Bangumi'
         work_root = root + r'\2026\2026-07\ワールド イズ ダンシング'
