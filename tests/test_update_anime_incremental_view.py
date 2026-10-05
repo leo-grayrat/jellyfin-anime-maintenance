@@ -155,6 +155,34 @@ class IncrementalViewTests(unittest.TestCase):
             r'2026年07月新番\君のことが大大大大大好きな100人の彼女\Season 03\S03E07 - '
         ))
 
+    def test_dual_label_uses_absolute_number_for_next_season_episode(self):
+        root = r'E:\Bangumi'
+        work_root = root + r'\2026\2026-10\薬屋のひとりごと 第3期'
+        old = work_root + r'\[BeanSub][Kusuriya S3][01_49][CHS].mp4'
+        target = r'2026年10月新番\薬屋のひとりごと\Season 03\S03E01 - [BeanSub][Kusuriya S3][01_49][CHS].mp4'
+        rows = [base_row(old, '薬屋のひとりごと', '2026年10月新番', 3, 1, 49, target)]
+        profiles = incremental.build_profiles(rows, [root])
+
+        new_path = work_root + r'\[BeanSub][Kusuriya S3][02_50][CHS].mp4'
+        result = incremental.classify_new_path(new_path, profiles, rows)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result['Season'], '3')
+        self.assertEqual(result['EpisodeStart'], '2')
+        self.assertEqual(result['RawEpisodeLabel'], '50')
+        self.assertIn(r'S03E02 - [BeanSub][Kusuriya S3][02_50]', result['TargetRelativePath'])
+
+    def test_dual_label_rejects_conflicting_season_and_absolute_numbers(self):
+        root = r'E:\Bangumi'
+        work_root = root + r'\2026\2026-10\薬屋のひとりごと 第3期'
+        old = work_root + r'\[BeanSub][Kusuriya S3][01_49][CHS].mp4'
+        target = r'2026年10月新番\薬屋のひとりごと\Season 03\S03E01 - [BeanSub][Kusuriya S3][01_49][CHS].mp4'
+        rows = [base_row(old, '薬屋のひとりごと', '2026年10月新番', 3, 1, 49, target)]
+        profiles = incremental.build_profiles(rows, [root])
+
+        conflicting_path = work_root + r'\[BeanSub][Kusuriya S3][03_50][CHS].mp4'
+        self.assertIsNone(incremental.classify_new_path(conflicting_path, profiles, rows))
+
     def test_world_dancing_changed_group_nested_folder_explicit_sxxeyy(self):
         root = r'D:\Bangumi'
         work_root = root + r'\2026\2026-07\ワールド イズ ダンシング'

@@ -225,6 +225,16 @@ def _raw_candidates(name: str) -> list[int]:
     return values
 
 
+def _dual_episode_label(name: str) -> tuple[int, int] | None:
+    match = re.search(r'\[(\d{1,3})_(\d{1,3})\]', name)
+    if not match:
+        return None
+    local, absolute = int(match.group(1)), int(match.group(2))
+    if not (1 <= local <= 200 and 1 <= absolute <= 200):
+        return None
+    return local, absolute
+
+
 def _choose_from_models(candidates: Sequence[int], profile: Profile) -> tuple[int, int, int] | None:
     scored: list[tuple[int, int, int, int]] = []
     for raw in candidates:
@@ -271,10 +281,14 @@ def classify_new_path(path: str, profiles: dict[str, Profile], existing_rows: Se
         raw_label = str(episode)
         basis = '增量维护：已知作品目录 + 文件名显式 SxxEyy'
     else:
-        chosen = _choose_from_models(_raw_candidates(name), profile)
+        dual_label = _dual_episode_label(name)
+        raw_candidates = [dual_label[1]] if dual_label else _raw_candidates(name)
+        chosen = _choose_from_models(raw_candidates, profile)
         if not chosen:
             return None
         raw, season, episode = chosen
+        if dual_label and episode != dual_label[0]:
+            return None
         raw_label = str(raw)
         basis = '增量维护：已知作品目录 + 既有 manifest 集数偏移模型'
 
